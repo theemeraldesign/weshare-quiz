@@ -28,7 +28,7 @@ export default function ParticipantQuiz(){
    if(data){setParticipantLoading(true);setProfile(data);setProfileForm({full_name:data.full_name,matric_number:data.matric_number,department:data.department});
     const next:Record<string,string>={};for(const f of quiz.participant_fields||[]){const key=String(f.label).trim().toLowerCase();if(key==="name")next[f.label]=data.full_name;else if(key==="matric number"||key==="matric no")next[f.label]=data.matric_number;else if(key==="department")next[f.label]=data.department;}setExtra(old=>({...next,...old}));
     if(quiz.mode==="tutorial"){const {data:progress,error:progressError}=await db!.rpc("get_tutorial_progress",{p_slug:slug});if(!active)return;if(progressError)setMessage(progressError.message);else{const a:Record<string,number>={},u:Record<string,boolean>={},f:Record<string,Q[]>={};for(const item of progress||[]){a[item.question_id]=item.selected_option;if(item.unlocks_remedial){u[item.question_id]=true;const {data:followupsData}=await db!.rpc("get_unlocked_followups",{p_slug:slug,p_question_id:item.question_id});f[item.question_id]=followupsData||[]}}setAnswers(a);setUnlocked(u);setFollowups(f)}}
-    const {data:priorSubmission}=await db!.rpc("lookup_assessment_result",{p_slug:slug,p_email:data.email,p_matric:data.matric_number});if(!active)return;if(priorSubmission){setSubmitted(true);setLookupMode(true);setResult(priorSubmission)}setParticipantLoading(false);
+    const {data:priorSubmission}=await db!.rpc("lookup_assessment_result",{p_slug:slug,p_email:data.email,p_matric:data.matric_number});if(!active)return;if(priorSubmission){setSubmitted(true);setLookupMode(quiz.mode==="exam");setResult(priorSubmission)}setParticipantLoading(false);
    }
   })();return()=>{active=false};
  },[session,quiz,slug]);
@@ -56,7 +56,7 @@ export default function ParticipantQuiz(){
   if(required.some(q=>answers[q.id]===undefined)){setMessage("Please answer every available question before submitting.");return}
   setBusy(true);setMessage("");const payload=required.map(q=>({question_id:q.id,selected_option:answers[q.id]}));
   const {data,error}=await db!.rpc("submit_assessment",{p_slug:slug,p_name:profile.full_name,p_email:profile.email,p_matric:profile.matric_number,p_extra:{...profileExtra,...extra},p_answers:payload});
-  setBusy(false);if(error){setMessage(error.message);return}setSubmitted(true);setLookupMode(true);if(data?.score!==undefined)setResult(data);
+  setBusy(false);if(error){setMessage(error.message);return}setSubmitted(true);setLookupMode(quiz.mode==="exam");if(data?.score!==undefined)setResult(data);
  }
  async function lookup(){if(!profile)return;setBusy(true);setMessage("");const {data,error}=await db!.rpc("lookup_assessment_result",{p_slug:slug,p_email:profile.email,p_matric:profile.matric_number});setBusy(false);if(error){setMessage(error.message);return}setResult(data)}
  const description=quiz.mode==="exam"?"Complete the questions and submit your work. Your result will be available when it is released.":"Work through the questions carefully. Your selections are saved as you go.";
