@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 type Question={id:string;kind:string;prompt:string;options:string[];position:number;parent_question_id:string|null};
 export default function Editor(){
  const {id}=useParams<{id:string}>();const [quiz,setQuiz]=useState<any>(null),[questions,setQuestions]=useState<Question[]>([]),[submissions,setSubmissions]=useState<any[]>([]);
+ const [editing,setEditing]=useState(""),[fields,setFields]=useState<any[]>([]),[fieldLabel,setFieldLabel]=useState("");
  const [kind,setKind]=useState("primary"),[parent,setParent]=useState(""),[prompt,setPrompt]=useState(""),[options,setOptions]=useState(["","","","",""]),[correct,setCorrect]=useState(0),[message,setMessage]=useState("");
  async function load(){if(!db)return;const {data,error}=await db.from("quizzes").select("*").eq("id",id).single();if(error){setMessage(error.message);return}setQuiz(data);setFields(data.participant_fields||[]);const r=await db.from("questions").select("*").eq("quiz_id",id).order("position");setQuestions(r.data||[]);const s=await db.from("submissions").select("id,participant_name,email,matric_number,score,max_score,submitted_at").eq("quiz_id",id).order("submitted_at",{ascending:false});setSubmissions(s.data||[])}
  useEffect(()=>{load()},[id]);
