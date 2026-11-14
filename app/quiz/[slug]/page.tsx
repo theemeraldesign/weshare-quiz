@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useMemo,useRef,useState} from "react";
+import {useEffect,useRef,useState} from "react";
 import {useParams} from "next/navigation";
 import {db} from "@/lib/db";
 import Brand from "@/components/Brand";
@@ -36,7 +36,7 @@ export default function ParticipantQuiz(){
  if(!db)return <main className="quizwrap"><section className="panel">Assessment service is not configured.</section></main>;
  if(!quiz)return <main className="quizwrap"><Brand/><section className="panel">{message||"Loading assessment…"}</section></main>;
  const primary:Q[]=(quiz.questions||[]).filter((q:Q)=>!q.parent_question_id).slice();
- const randomizedPrimary=useMemo(()=>{const seed=(session?.user?.id||"guest")+":"+slug;return [...primary].sort((a,b)=>stableHash(seed+":"+a.id)-stableHash(seed+":"+b.id)||a.id.localeCompare(b.id))},[quiz,session?.user?.id,slug]);
+ const seed=(session?.user?.id||"guest")+":"+slug;const randomizedPrimary=[...primary].sort((a,b)=>stableHash(seed+":"+a.id)-stableHash(seed+":"+b.id)||a.id.localeCompare(b.id));
  const steps:{q:Q;followup:boolean}[]=[];for(const q of randomizedPrimary){steps.push({q,followup:false});if(quiz.mode==="tutorial"&&unlocked[q.id])for(const r of followups[q.id]||[])steps.push({q:r,followup:true})}
  const activeStep=Math.min(currentStep,Math.max(0,steps.length-1));const current=steps[activeStep];
  const participantFields:any[]=quiz.participant_fields||[];
