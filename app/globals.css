@@ -114,3 +114,22 @@ button:active{filter:brightness(.96)}
 .access-request-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#e3a33b;margin-right:8px}
 .access-request-response{margin-top:14px;padding:12px;border-radius:9px;background:#fff7ed;border:1px solid #f4dfbd;font-size:12px;color:#80551c}
 .access-request-response p{margin:6px 0 0;white-space:pre-wrap}
+
+
+/* Admin access request and invite-code management */
+.admin-access-list{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.admin-access-card{margin:0}
+.admin-access-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.admin-access-top h3{margin:10px 0 3px}
+.admin-access-top p{margin:0 0 5px;font-size:12px;color:#4e6685}
+.admin-access-top small,.admin-access-id{font-size:9px;color:#8493a7;overflow-wrap:anywhere}
+.admin-access-id{max-width:130px;text-align:right}
+.admin-request-message,.admin-request-reply{padding:12px;border-radius:9px;margin-top:13px;background:#f5f8fd;border:1px solid #e4ebf5;font-size:11px;color:#526982}
+.admin-request-reply{background:#eef8f2;border-color:#d5eddf;color:#286b48}
+.admin-request-message p,.admin-request-reply p{margin:6px 0 0;white-space:pre-wrap;line-height:1.6}
+.admin-access-card label,.admin-invite-card label{display:grid;gap:7px;margin-top:14px;font-size:11px;font-weight:700;color:#536982}
+.admin-access-card textarea,.admin-invite-card input{width:100%;padding:11px;border:1px solid #dce5f1;border-radius:8px;font:inherit;font-size:12px;resize:vertical}
+.admin-invite-card{max-width:760px}
+.admin-invite-card p{font-size:12px;line-height:1.65;color:#6b7e96}
+.admin-invite-card .admin-help{font-size:10px}
+@media(max-width:760px){.admin-access-list{grid-template-columns:1fr}.admin-access-top{flex-direction:column}.admin-access-id{text-align:left;max-width:none}}
