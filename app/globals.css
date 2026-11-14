@@ -21,3 +21,12 @@
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @keyframes select-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:720px){.custom-select-menu{max-height:42vh}.custom-select-option{padding:13px 12px;font-size:14px}}
+
+.title-edit{display:grid;gap:10px;max-width:520px;margin-top:14px}
+.btn.danger{background:#a83232;color:#fff}
+.btn.danger:hover{background:#8e2626}
+.modal-backdrop{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:rgba(12,22,17,.58);backdrop-filter:blur(5px);animation:select-in .16s ease-out}
+.confirm-modal{width:min(100%,460px);padding:26px;border:1px solid #e4e9e5;border-radius:18px;background:#fff;box-shadow:0 24px 80px rgba(0,0,0,.24)}
+.confirm-modal h2{margin:10px 0}
+.confirm-modal p{margin:8px 0 22px}
+@media(max-width:720px){.confirm-modal{padding:22px}.welcome .actions{width:100%}.welcome .actions .btn{flex:1}}
