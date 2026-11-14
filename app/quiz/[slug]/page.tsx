@@ -7,7 +7,8 @@ import {ClipboardCheck,SearchCheck,LogOut,ShieldCheck,LockKeyhole,Mail,ArrowRigh
 type Q={id:string;prompt:string;options:string[];parent_question_id?:string|null;position:number;image_url?:string|null};
 type ParticipantProfile={user_id:string;full_name:string;matric_number:string;department:string;email:string};
 type Result={status:string;message?:string;score?:number;max_score?:number;submitted_at?:string;participant_name?:string};
-function stableHash(value:string){let h=2166136261;for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}\nexport default function ParticipantQuiz(){
+function stableHash(value:string){let h=2166136261;for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
+export default function ParticipantQuiz(){
  const {slug}=useParams<{slug:string}>();
  const userIdRef=useRef<string|null>(null);
  const [quiz,setQuiz]=useState<any>(null),[session,setSession]=useState<any>(null),[profile,setProfile]=useState<ParticipantProfile|null>(null);
