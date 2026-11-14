@@ -43,8 +43,11 @@ export default function ParticipantQuiz(){
   if(error){setMessage(error.code==="23505"?"A profile already exists for this Google account. Refresh the page.":error.message);return}setProfile(data);
  }
  async function choose(q:Q,index:number){if(answers[q.id]!==undefined||busy)return;
-  if(quiz.mode==="tutorial"){setBusy(true);setMessage("");const {data,error}=await db!.rpc("lock_tutorial_answer",{p_slug:slug,p_question_id:q.id,p_selected_option:index});setBusy(false);
-   if(error){setMessage(error.message);return}setAnswers(old=>({...old,[q.id]:data.selected_option}));if(data.unlocks_remedial)setUnlocked(old=>({...old,[q.id]:true}));
+  if(quiz.mode==="tutorial"){setBusy(true);setMessage("");const {data,error}=await db!.rpc("lock_tutorial_answer",{p_slug:slug,p_question_id:q.id,p_selected_option:index});
+   if(error){setBusy(false);setMessage(error.message);return}
+   setAnswers(old=>({...old,[q.id]:data.selected_option}));
+   if(data.unlocks_remedial){const {data:followupsData,error:followupsError}=await db!.rpc("get_unlocked_followups",{p_slug:slug,p_question_id:q.id});if(followupsError)setMessage(followupsError.message);else{setUnlocked(old=>({...old,[q.id]:true}));setFollowups(old=>({...old,[q.id]:followupsData||[]}))}}
+   setBusy(false);
   }else setAnswers(old=>({...old,[q.id]:index}));
  }
  async function submit(e:React.FormEvent){e.preventDefault();if(!profile){setMessage("Complete your participant profile first.");return}
