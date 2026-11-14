@@ -16,7 +16,7 @@ export default function ParticipantQuiz(){
  const [submitted,setSubmitted]=useState(false),[result,setResult]=useState<Result|null>(null),[lookupMode,setLookupMode]=useState(false);
  const [busy,setBusy]=useState(false),[authLoading,setAuthLoading]=useState(true),[profileSaving,setProfileSaving]=useState(false),[participantLoading,setParticipantLoading]=useState(false);
  useEffect(()=>{if(!db)return;let active=true;
-  db.rpc("get_public_quiz",{p_slug:slug}).then(({data,error})=>{if(!active)return;if(error)setMessage(error.message);else setQuiz(data)});
+  db.rpc("get_public_quiz_v2",{p_slug:slug}).then(({data,error})=>{if(!active)return;if(error)setMessage(error.message);else setQuiz(data)});
   db.auth.getSession().then(({data})=>{if(!active)return;setSession(data.session);setAuthLoading(false)});
   const {data:listener}=db.auth.onAuthStateChange((_event,next)=>{setSession(next);setProfile(null);setAuthLoading(false)});
   return()=>{active=false;listener.subscription.unsubscribe()};
