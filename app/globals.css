@@ -38,3 +38,28 @@ button,a{touch-action:manipulation}
 button:focus{outline:none}
 button:focus-visible,a:focus-visible{outline:3px solid rgba(37,99,235,.35);outline-offset:3px}
 button:active{filter:brightness(.96)}
+
+/* Participant Google sign-in and locked-answer states */
+.participant-auth{max-width:560px;margin:28px auto}
+.google-email{display:flex;align-items:center;gap:9px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#f7faff;color:#27446f;font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.google-email svg:last-child{margin-left:auto;color:#2563eb;flex-shrink:0}
+.profile-reminder{padding:13px 15px;border-left:3px solid var(--blue);background:#eff6ff;border-radius:0 9px 9px 0;color:#29446f;font-size:13px}
+.profile-form{display:grid;gap:15px;margin-top:16px}
+.participant-signed{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:16px;margin-bottom:22px;border-bottom:1px solid var(--line)}
+.participant-signed strong,.participant-signed small{display:block}
+.participant-signed strong{margin:5px 0}
+.text-action{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--blue);font-weight:700;cursor:pointer}
+.answer{display:flex;align-items:center;gap:10px}
+.answer input[type=radio]{width:19px;height:19px;accent-color:var(--blue);flex:0 0 19px}
+.answer.selected{border-color:#8bb4fb;background:#f2f7ff}
+.answer:has(input:disabled){cursor:default}
+.answer svg{margin-left:auto;color:var(--blue);flex-shrink:0}
+.remedial{margin:14px 0 0 14px;padding:15px;border-left:3px solid #93b4eb;background:#f5f8ff;border-radius:0 10px 10px 0}
+.result-pending,.result-score,.result-card{display:flex;align-items:center;gap:12px;padding:15px;border:1px solid #d9e7fb;border-radius:11px;background:#f4f8ff;color:#21457d}
+.result-score{justify-content:space-between}
+.result-score strong{font-size:24px;font-family:Manrope,sans-serif}
+.result-card{display:grid;grid-template-columns:1fr 1fr;margin-top:16px}
+.result-card span,.result-card strong{display:block}
+.result-card span{font-size:12px;color:#60738f;margin-bottom:5px}
+.result-card strong{font-size:16px;overflow-wrap:anywhere}
+@media(max-width:720px){.result-card{grid-template-columns:1fr}.participant-signed{align-items:flex-start}.remedial{margin-left:0}}
