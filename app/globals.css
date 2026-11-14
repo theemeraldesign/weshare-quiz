@@ -133,3 +133,8 @@ button:active{filter:brightness(.96)}
 .admin-invite-card p{font-size:12px;line-height:1.65;color:#6b7e96}
 .admin-invite-card .admin-help{font-size:10px}
 @media(max-width:760px){.admin-access-list{grid-template-columns:1fr}.admin-access-top{flex-direction:column}.admin-access-id{text-align:left;max-width:none}}
+
+
+.admin-access-alert{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 16px;padding:15px 17px;border:1px solid #f0ddb6;border-radius:11px;background:#fff9ed;color:#79551e}
+.admin-access-alert strong{font-size:12px}.admin-access-alert p{font-size:11px;margin:5px 0 0;color:#8b7148}
+@media(max-width:560px){.admin-access-alert{align-items:flex-start;flex-direction:column}}
