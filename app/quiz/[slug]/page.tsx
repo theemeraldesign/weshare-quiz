@@ -8,7 +8,8 @@ type Q={id:string;prompt:string;options:string[];parent_question_id?:string|null
 type ParticipantProfile={user_id:string;full_name:string;matric_number:string;department:string;email:string};
 type Result={status:string;message?:string;score?:number;max_score?:number;submitted_at?:string;participant_name?:string};
 export default function ParticipantQuiz(){
- const {slug}=useParams<{slug:string}>();\n const userIdRef=useRef<string|null>(null);
+ const {slug}=useParams<{slug:string}>();
+ const userIdRef=useRef<string|null>(null);
  const [quiz,setQuiz]=useState<any>(null),[session,setSession]=useState<any>(null),[profile,setProfile]=useState<ParticipantProfile|null>(null);
  const [profileForm,setProfileForm]=useState({full_name:"",matric_number:"",department:""});
  const [answers,setAnswers]=useState<Record<string,number>>({}),[unlocked,setUnlocked]=useState<Record<string,boolean>>({}),[followups,setFollowups]=useState<Record<string,Q[]>>({});
