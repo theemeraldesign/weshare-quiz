@@ -4,20 +4,93 @@ import { db } from "@/lib/db";
 import CustomSelect from "@/components/CustomSelect";
 import Brand from "@/components/Brand";
 import { ArrowUpRight, LogOut, Plus } from "lucide-react";
-type Quiz = { id:string; title:string; mode:string; status:string; slug:string };
-export default function Home(){
- const [session,setSession]=useState<any>(null),[profile,setProfile]=useState<any>(null),[quizzes,setQuizzes]=useState<Quiz[]>([]);
- const [name,setName]=useState(""),[invite,setInvite]=useState(""),[title,setTitle]=useState(""),[mode,setMode]=useState("exam"),[message,setMessage]=useState(""),[busy,setBusy]=useState(false),[accessRequest,setAccessRequest]=useState<any>(null),[requestOpen,setRequestOpen]=useState(false),[requestMessage,setRequestMessage]=useState("");
- useEffect(()=>{if(!db)return;db.auth.getSession().then(({data})=>setSession(data.session));const {data}=db.auth.onAuthStateChange((_e,s)=>setSession(s));return()=>data.subscription.unsubscribe()},[]);
- useEffect(()=>{if(!db||!session)return;let active=true;(async()=>{const {data}=await db!.from("instructors").select("*").eq("user_id",session.user.id).maybeSingle();if(!active)return;setProfile(data);if(data){const r=await db!.from("quizzes").select("id,title,mode,status,slug").eq("owner_id",session.user.id).order("created_at",{ascending:false});setQuizzes(r.data||[])}else{const req=await db!.from("instructor_access_requests").select("*").eq("user_id",session.user.id).order("created_at",{ascending:false}).limit(1).maybeSingle();if(active)setAccessRequest(req.data)}})();return()=>{active=false}},[session]);
- async function signIn(){if(!db)return;setBusy(true);const {error}=await db.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin,queryParams:{access_type:"offline",prompt:"select_account"}}});if(error){setMessage(error.message);setBusy(false)}}
- async function activate(e:React.FormEvent){e.preventDefault();if(!db)return;const {error}=await db.rpc("claim_instructor",{p_display_name:name||session.user.user_metadata?.full_name||session.user.email?.split("@")[0],p_invite_code:invite});setMessage(error?.message||"Lecturer access activated.");if(!error)location.reload();}
- async function create(e:React.FormEvent){e.preventDefault();if(!db||!session)return;const {data,error}=await db.from("quizzes").insert({owner_id:session.user.id,title,mode}).select("id").single();if(error)setMessage(error.message);else location.href="/instructor/"+data.id;}
- async function submitAccessRequest(e:React.FormEvent){e.preventDefault();if(!db||!session)return;setBusy(true);setMessage("");const {data,error}=await db.from("instructor_access_requests").insert({user_id:session.user.id,email:session.user.email,display_name:name||session.user.user_metadata?.full_name||session.user.email?.split("@")[0]||"Lecturer",message:requestMessage}).select("*").single();setBusy(false);if(error){setMessage(error.message);return}setAccessRequest(data);setRequestOpen(false);setMessage("Your lecturer access request has been sent.");}
- if(!db)return <main className="wrap"><section className="hero"><span className="eyebrow">WESHARE ASSESSMENTS</span><h1>One link.<br/>Clear assessments.</h1><p>Supabase configuration is missing. Add the public Supabase URL and anon key to Vercel.</p></section></main>;
- return <><header className="top"><Brand/><span className="subtle">ASSESSMENT WORKSPACE</span></header><main className="wrap">
- {!session?<section className="hero"><div><span className="eyebrow">ASSESSMENT, MADE CLEAR</span><h1>Better questions.<br/>Clearer outcomes.</h1><p>Create structured examinations or guided tutorials. Share one link with your class.</p></div><section className="panel"><span className="eyebrow">LECTURER ACCESS</span><h2>Continue with Google</h2><p>Use your Google account to access your lecturer workspace. No email sign-in links or verification codes.</p><button className="btn" disabled={busy} onClick={signIn}>{busy?"Redirecting…":"Continue with Google"}</button>{message&&<p className="notice">{message}</p>}</section></section>
- :!profile?<section className="panel narrow"><span className="eyebrow">LECTURER ACTIVATION</span><h1>Set up your workspace</h1><p>Signed in as {session.user.email}. Enter your lecturer invitation code.</p><form onSubmit={activate}><label>Display name<input required value={name} onChange={e=>setName(e.target.value)} placeholder={session.user.user_metadata?.full_name||"Your name"}/></label><label>Invite code<input required value={invite} onChange={e=>setInvite(e.target.value)}/></label><button className="btn">Activate lecturer access</button></form>{message&&<p className="notice">{message}</p>}{accessRequest?.status==="pending"?<div className="access-request-status"><span className="access-request-dot pending"/>Your access request is awaiting review.</div>:accessRequest?.status==="approved"?<div className="access-request-status approved">Your Quizzer access has been approved. Refresh this page to continue.</div>:<div className="access-request-area">{accessRequest?.status==="declined"&&<div className="access-request-response"><strong>Your previous request was declined.</strong>{accessRequest.admin_message&&<p>{accessRequest.admin_message}</p>}</div>}<div className="access-request-link-row"><button type="button" className="access-request-link" onClick={()=>setRequestOpen(v=>!v)}>{requestOpen?"Cancel request":"Request Quizzer access"}</button></div>{requestOpen&&<form className="access-request-form" onSubmit={submitAccessRequest}><label>Message to administrator <span className="subtle">(optional)</span><textarea rows={3} value={requestMessage} onChange={e=>setRequestMessage(e.target.value)} placeholder="Tell us why you need lecturer access."/></label><button className="btn" disabled={busy}>{busy?"Sending…":"Send access request"}</button></form>}</div>}</section>
- :<><section className="welcome"><div><span className="eyebrow">LECTURER WORKSPACE</span><h1>Welcome, {profile.display_name}</h1><p>Create an assessment or manage your published quizzes.</p></div><button className="btn ghost" onClick={()=>db!.auth.signOut()}><LogOut size={16}/> Sign out</button></section><section className="panel"><h2>Create an assessment</h2><form className="create" onSubmit={create}><label>Assessment title<input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. MTH 202: Calculus Test"/></label><label>Assessment mode<CustomSelect value={mode} onChange={setMode} options={[{value:"exam",label:"Examination, results released later"},{value:"tutorial",label:"Tutorial, immediate feedback"}]}/></label><button className="btn"><Plus size={17}/> Create quiz</button></form></section><section className="section"><div className="sectionhead"><h2>Your assessments</h2><span className="subtle">{quizzes.length} total</span></div>{quizzes.length===0?<p className="empty">Your assessments will appear here.</p>:<div className="quizlist">{quizzes.map(q=><a className="quizrow" href={"/instructor/"+q.id} key={q.id}><div><strong>{q.title}</strong><small>{q.mode} · {q.status}</small></div><span>Manage <ArrowUpRight size={16}/></span></a>)}</div>}</section></>}
- </main><footer>WeShare Quiz <span>Built for focused learning</span></footer></>;
+
+type Quiz = { id: string; title: string; mode: string; status: string; slug: string };
+
+export default function Home() {
+  const [session, setSession] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [title, setTitle] = useState("");
+  const [mode, setMode] = useState("exam");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!db) { setLoading(false); return; }
+    db.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
+    const { data } = db.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!db || !session?.user) { setProfile(null); setQuizzes([]); return; }
+    let active = true;
+    (async () => {
+      setLoading(true);
+      const user = session.user;
+      const displayName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Quizzer";
+      const { data: existing, error: lookupError } = await db!.from("instructors").select("*").eq("user_id", user.id).maybeSingle();
+      if (!active) return;
+      if (lookupError) { setMessage(lookupError.message); setLoading(false); return; }
+      if (!existing) {
+        const { error: insertError } = await db!.from("instructors").insert({ user_id: user.id, display_name: displayName });
+        if (insertError && insertError.code !== "23505") {
+          setMessage(insertError.message);
+          setLoading(false);
+          return;
+        }
+      }
+      const [{ data: savedProfile, error: profileError }, { data: savedQuizzes, error: quizError }] = await Promise.all([
+        db!.from("instructors").select("*").eq("user_id", user.id).single(),
+        db!.from("quizzes").select("id,title,mode,status,slug").eq("owner_id", user.id).order("created_at", { ascending: false })
+      ]);
+      if (!active) return;
+      if (profileError || quizError) setMessage(profileError?.message || quizError?.message || "Unable to load your workspace.");
+      setProfile(savedProfile);
+      setQuizzes(savedQuizzes || []);
+      setLoading(false);
+    })();
+    return () => { active = false; };
+  }, [session]);
+
+  async function signIn() {
+    if (!db) return;
+    setBusy(true);
+    setMessage("");
+    const { error } = await db.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: location.origin, queryParams: { access_type: "offline", prompt: "select_account" } }
+    });
+    if (error) { setMessage(error.message); setBusy(false); }
+  }
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    if (!db || !session?.user || !title.trim()) return;
+    setBusy(true);
+    setMessage("");
+    const { data, error } = await db.from("quizzes").insert({ owner_id: session.user.id, title: title.trim(), mode }).select("id").single();
+    setBusy(false);
+    if (error) setMessage(error.message);
+    else location.href = "/instructor/" + data.id;
+  }
+
+  if (!db) return <main className="wrap"><section className="hero"><span className="eyebrow">WESHARE ASSESSMENTS</span><h1>One link.<br />Clear assessments.</h1><p>Supabase configuration is missing. Add the public Supabase URL and anon key to Vercel.</p></section></main>;
+
+  return <>
+    <header className="top"><Brand /><span className="subtle">QUIZ WORKSPACE</span></header>
+    <main className="wrap">
+      {!session ? <section className="hero">
+        <div><span className="eyebrow">ASSESSMENT, MADE CLEAR</span><h1>Better questions.<br />Clearer outcomes.</h1><p>Create examinations and guided tutorials, or open a shared quiz link to take an assessment.</p></div>
+        <section className="panel"><span className="eyebrow">GOOGLE SIGN-IN</span><h2>Continue with Google</h2><p>Sign in once to create quizzes or take an assessment shared with you.</p><button className="btn" disabled={busy} onClick={signIn}>{busy ? "Redirecting…" : "Continue with Google"}</button>{message && <p className="notice">{message}</p>}</section>
+      </section> : loading ? <section className="panel narrow"><p>Preparing your Quizzer workspace…</p></section> : <>
+        <section className="welcome"><div><span className="eyebrow">QUIZZER WORKSPACE</span><h1>Welcome, {profile?.display_name || session.user.user_metadata?.full_name || "Quizzer"}</h1><p>Create a quiz or manage your published assessments.</p></div><button className="btn ghost" onClick={() => db!.auth.signOut()}><LogOut size={16} /> Sign out</button></section>
+        <section className="panel"><h2>Create a quiz</h2><form className="create" onSubmit={create}><label>Quiz title<input required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. MTH 202: Calculus Test" /></label><label>Quiz mode<CustomSelect value={mode} onChange={setMode} options={[{ value: "exam", label: "Examination, results released later" }, { value: "tutorial", label: "Tutorial, immediate feedback" }]} /></label><button className="btn" disabled={busy}><Plus size={17} /> {busy ? "Creating…" : "Create quiz"}</button></form>{message && <p className="notice">{message}</p>}</section>
+        <section className="section"><div className="sectionhead"><h2>Your quizzes</h2><span className="subtle">{quizzes.length} total</span></div>{quizzes.length === 0 ? <p className="empty">Your quizzes will appear here.</p> : <div className="quizlist">{quizzes.map(q => <a className="quizrow" href={"/instructor/" + q.id} key={q.id}><div><strong>{q.title}</strong><small>{q.mode} · {q.status}</small></div><span>Manage <ArrowUpRight size={16} /></span></a>)}</div>}</section>
+      </>}
+    </main>
+    <footer>WeShare Quiz <span>Built for focused learning</span></footer>
+  </>;
 }
