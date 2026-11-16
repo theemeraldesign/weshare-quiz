@@ -4,10 +4,10 @@ A quiz and assessment platform for WeShare lessons.
 
 ## Product flow
 
-1. Lecturers create quizzes and questions.
-2. Lecturers publish a shareable quiz link into a WeShare lesson.
-3. Participants complete the lesson, then open the quiz link and submit their answers.
-4. Examination mode withholds results until the lecturer releases them.
+1. Anyone signs in with Google to create and manage quizzes.
+2. Quizzers publish a shareable quiz link into a WeShare lesson.
+3. Participants open the shared quiz link and sign in with Google to submit their answers.
+4. Examination mode withholds results until the quizzer releases them.
 5. Tutorial mode provides immediate feedback and supports remedial questions.
 
 ## Stack
