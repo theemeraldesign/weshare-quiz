@@ -15,7 +15,7 @@ export default function ParticipantQuiz(){
  const [answers,setAnswers]=useState<Record<string,number>>({}),[unlocked,setUnlocked]=useState<Record<string,boolean>>({}),[followups,setFollowups]=useState<Record<string,Q[]>>({});
  const [extra,setExtra]=useState<Record<string,string>>({}),[message,setMessage]=useState("");
  const [submitted,setSubmitted]=useState(false),[result,setResult]=useState<Result|null>(null),[lookupMode,setLookupMode]=useState(false);
- const [busy,setBusy]=useState(false),[authLoading,setAuthLoading]=useState(true),[participantLoading,setParticipantLoading]=useState(false),[currentStep,setCurrentStep]=useState(0);
+ const [busy,setBusy]=useState(false),[authLoading,setAuthLoading]=useState(true),[participantLoading,setParticipantLoading]=useState(true),[currentStep,setCurrentStep]=useState(0);
  useEffect(()=>{if(!db)return;let active=true;
   db.rpc("get_public_quiz_v2",{p_slug:slug}).then(({data,error})=>{if(!active)return;if(error)setMessage(error.message);else setQuiz(data)});
   db.auth.getSession().then(({data})=>{if(!active)return;setSession(data.session);setAuthLoading(false)});
