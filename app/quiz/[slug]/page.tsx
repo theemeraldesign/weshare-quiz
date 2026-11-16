@@ -24,14 +24,57 @@ export default function ParticipantQuiz(){
   return()=>{active=false;listener.subscription.unsubscribe()};
  },[slug]);
  useEffect(()=>{if(!db||!session?.user||!quiz)return;let active=true;
-  (async()=>{const {data,error}=await db!.from("participant_profiles").select("*").eq("user_id",session.user.id).maybeSingle();
-   if(!active)return;if(error){setMessage(error.message);return}
-   if(data){setParticipantLoading(true);setProfile(data);setProfileForm({full_name:data.full_name,matric_number:data.matric_number,department:data.department});
-    const next:Record<string,string>={};for(const f of quiz.participant_fields||[]){const key=String(f.label).trim().toLowerCase();if(key==="name")next[f.label]=data.full_name;else if(key==="matric number"||key==="matric no")next[f.label]=data.matric_number;else if(key==="department")next[f.label]=data.department;}setExtra(old=>({...next,...old}));
-    if(quiz.mode==="tutorial"){const {data:progress,error:progressError}=await db!.rpc("get_tutorial_progress",{p_slug:slug});if(!active)return;if(progressError)setMessage(progressError.message);else{const a:Record<string,number>={},u:Record<string,boolean>={},f:Record<string,Q[]>={};for(const item of progress||[]){a[item.question_id]=item.selected_option;if(item.unlocks_remedial){u[item.question_id]=true;const {data:followupsData}=await db!.rpc("get_unlocked_followups",{p_slug:slug,p_question_id:item.question_id});f[item.question_id]=followupsData||[]}}setAnswers(a);setUnlocked(u);setFollowups(f)}}
-    const {data:priorSubmission}=await db!.rpc("lookup_assessment_result",{p_slug:slug,p_email:data.email,p_matric:data.matric_number});if(!active)return;if(priorSubmission){setSubmitted(true);setLookupMode(quiz.mode==="exam");setResult(priorSubmission)}setParticipantLoading(false);
+  (async()=>{
+   setParticipantLoading(true);
+   const user=session.user;
+   const displayName=user.user_metadata?.full_name||user.user_metadata?.name||user.email?.split("@")[0]||"Participant";
+   const {data:existing,error}=await db!.from("participant_profiles").select("*").eq("user_id",user.id).maybeSingle();
+   if(!active)return;
+   if(error){setMessage(error.message);setParticipantLoading(false);return}
+   let saved=existing;
+   if(!saved){
+    const {data:created,error:createError}=await db!.from("participant_profiles").insert({user_id:user.id,full_name:displayName,matric_number:"",department:"",email:(user.email||"").toLowerCase()}).select("*").single();
+    if(createError&&createError.code==="23505"){
+     const {data:again,error:againError}=await db!.from("participant_profiles").select("*").eq("user_id",user.id).single();
+     if(againError){setMessage(againError.message);setParticipantLoading(false);return}
+     saved=again;
+    }else if(createError){setMessage(createError.message);setParticipantLoading(false);return}
+    else saved=created;
    }
-  })();return()=>{active=false};
+   if(!active)return;
+   setProfile(saved);
+   setProfileForm({full_name:saved.full_name,matric_number:saved.matric_number,department:saved.department});
+   const next:Record<string,string>={};
+   for(const f of quiz.participant_fields||[]){
+    const key=String(f.label).trim().toLowerCase();
+    if(key==="name")next[f.label]=saved.full_name;
+    else if(key==="matric number"||key==="matric no")next[f.label]=saved.matric_number;
+    else if(key==="department")next[f.label]=saved.department;
+   }
+   setExtra(old=>({...next,...old}));
+   if(quiz.mode==="tutorial"){
+    const {data:progress,error:progressError}=await db!.rpc("get_tutorial_progress",{p_slug:slug});
+    if(!active)return;
+    if(progressError)setMessage(progressError.message);
+    else{
+     const a:Record<string,number>={},u:Record<string,boolean>={},f:Record<string,Q[]>={};
+     for(const item of progress||[]){
+      a[item.question_id]=item.selected_option;
+      if(item.unlocks_remedial){
+       u[item.question_id]=true;
+       const {data:followupsData}=await db!.rpc("get_unlocked_followups",{p_slug:slug,p_question_id:item.question_id});
+       f[item.question_id]=followupsData||[];
+      }
+     }
+     setAnswers(a);setUnlocked(u);setFollowups(f);
+    }
+   }
+   const {data:priorSubmission}=await db!.rpc("lookup_assessment_result",{p_slug:slug,p_email:saved.email,p_matric:saved.matric_number});
+   if(!active)return;
+   if(priorSubmission){setSubmitted(true);setLookupMode(quiz.mode==="exam");setResult(priorSubmission)}
+   setParticipantLoading(false);
+  })();
+  return()=>{active=false};
  },[session,quiz,slug]);
  if(!db)return <main className="quizwrap"><section className="panel">Assessment service is not configured.</section></main>;
  if(!quiz)return <main className="quizwrap"><Brand/><section className="panel">{message||"Loading assessment…"}</section></main>;
@@ -68,8 +111,7 @@ export default function ParticipantQuiz(){
  const description=quiz.mode==="exam"?"Complete the questions and submit your work. Your result will be available when it is released.":"Work through the questions carefully. Your selections are saved as you go.";
  return <main className="quizwrap"><Brand/><section className="quizhero"><span className="eyebrow">{quiz.mode==="exam"?"EXAMINATION":"GUIDED PRACTICE"}</span><h1>{quiz.title}</h1><p>{quiz.description||description}</p></section>
  {!session?<section className="panel participant-auth"><span className="eyebrow">PARTICIPANT ACCESS</span><h2>Continue with Google</h2><p>Sign in with your Google account to save your details and assessment progress securely.</p><button className="btn" disabled={busy||authLoading} onClick={signIn}>{busy?"Opening Google…":"Continue with Google"} <ArrowRight size={17}/></button>{message&&<p className="notice">{message}</p>}</section>
- :!profile?<section className="panel"><span className="eyebrow">ONE-TIME PARTICIPANT SETUP</span><h2>Your details</h2><div className="google-email"><Mail size={16}/><span>{session.user.email}</span><ShieldCheck size={17}/></div><p className="profile-reminder">Please verify your name, matric number and department carefully. These details identify your assessment records. You will not be able to change an answer after selecting it.</p><form onSubmit={saveProfile} className="profile-form"><label>Full name<input required autoComplete="name" value={profileForm.full_name} onChange={e=>setProfileForm({...profileForm,full_name:e.target.value})}/></label><label>Matric number<input required autoComplete="off" value={profileForm.matric_number} onChange={e=>setProfileForm({...profileForm,matric_number:e.target.value.toUpperCase()})}/></label><label>Department<input required value={profileForm.department} onChange={e=>setProfileForm({...profileForm,department:e.target.value})}/></label><button className="btn" disabled={profileSaving}>{profileSaving?"Saving details…":"Save details and continue"}</button></form>{message&&<p className="notice">{message}</p>}</section>
- :participantLoading?<section className="panel">Restoring your saved progress…</section> :submitted?<><section className="panel"><span className="eyebrow">SUBMISSION COMPLETE</span><h2>Submission received</h2><p>{quiz.mode==="exam"?"Your examination has been submitted. Your result will appear here after your lecturer releases it.":"Your tutorial has been submitted successfully."}</p>{quiz.mode==="exam"&&<div className="result-pending"><Clock3 size={18}/> Result pending lecturer release</div>}{quiz.mode==="tutorial"&&result&&<div className="result-score"><span>Your result</span><strong>{result.score} / {result.max_score}</strong></div>}</section>{lookupMode&&<section className="panel"><h2>Your result</h2><p>Signed in as {profile.email}</p><button className="btn ghost" disabled={busy} onClick={lookup}><SearchCheck size={17}/>{busy?"Checking…":"Check result"}</button>{result&&<ResultView result={result}/>}{message&&<p className="notice">{message}</p>}</section>}</>
+ :participantLoading?<section className="panel">Preparing your Google account…</section> :!profile?<section className="panel">{message||"Unable to prepare your Google profile. Refresh and try again."}</section> :submitted?<><section className="panel"><span className="eyebrow">SUBMISSION COMPLETE</span><h2>Submission received</h2><p>{quiz.mode==="exam"?"Your examination has been submitted. Your result will appear here after your quizzer releases it.":"Your tutorial has been submitted successfully."}</p>{quiz.mode==="exam"&&<div className="result-pending"><Clock3 size={18}/> Result pending quizzer release</div>}{quiz.mode==="tutorial"&&result&&<div className="result-score"><span>Your result</span><strong>{result.score} / {result.max_score}</strong></div>}</section>{lookupMode&&<section className="panel"><h2>Your result</h2><p>Signed in as {profile.email}</p><button className="btn ghost" disabled={busy} onClick={lookup}><SearchCheck size={17}/>{busy?"Checking…":"Check result"}</button>{result&&<ResultView result={result}/>}{message&&<p className="notice">{message}</p>}</section>}</>
  :<form className="panel" onSubmit={submit}><div className="participant-signed"><div><span className="eyebrow">SIGNED IN</span><strong>{profile.full_name}</strong><small>{profile.email}</small></div><button className="text-action" type="button" onClick={()=>db!.auth.signOut()}><LogOut size={15}/> Sign out</button></div><h2>Your details</h2><div className="google-email"><Mail size={16}/>{profile.email}<ShieldCheck size={17}/></div><div className="identity">{participantFields.map((f:any)=><label key={f.label}>{f.label}<input required={!!f.required} value={profileExtra[f.label]!==undefined?profileExtra[f.label]:(extra[f.label]||"")} disabled={["name","matric number","matric no","department"].includes(String(f.label).trim().toLowerCase())} onChange={e=>setExtra({...extra,[f.label]:e.target.value})}/></label>)}</div><hr/><div className="question-progress"><div><h2>Questions</h2><span>Question {activeStep+1} of {steps.length}</span></div><div className="progress-track"><span style={{width:((activeStep+1)/Math.max(steps.length,1)*100)+"%"}}/></div></div>{current&&<><article className="participantq active-question" key={current.q.id}><small>QUESTION {activeStep+1}</small>{current.q.image_url&&<img className="participant-question-image" src={current.q.image_url} alt="Question illustration"/>}<strong>{current.q.prompt}</strong>{current.q.options.map((option,j)=><label className={`answer ${answers[current.q.id]===j?"selected":""}`} key={j}><input type="radio" name={current.q.id} checked={answers[current.q.id]===j} disabled={answers[current.q.id]!==undefined||busy} onChange={()=>choose(current.q,j)}/>{String.fromCharCode(65+j)}. {option}{answers[current.q.id]===j&&<LockKeyhole size={15}/>}</label>)}</article>{currentFollowups.map((r,index)=><article className="participantq active-question followup-question" key={r.id}><small>FOLLOW-UP {index+1}</small>{r.image_url&&<img className="participant-question-image" src={r.image_url} alt="Question illustration"/>}<strong>{r.prompt}</strong>{r.options.map((option,j)=><label className={`answer ${answers[r.id]===j?"selected":""}`} key={j}><input type="radio" name={r.id} checked={answers[r.id]===j} disabled={answers[r.id]!==undefined||busy} onChange={()=>choose(r,j)}/>{String.fromCharCode(65+j)}. {option}{answers[r.id]===j&&<LockKeyhole size={15}/>}</label>)}</article>)}</>}<div className="question-navigation"><button type="button" className="btn ghost" disabled={activeStep===0||busy} onClick={()=>setCurrentStep(x=>Math.max(0,x-1))}>Previous</button>{activeStep<steps.length-1?<button type="button" className="btn" disabled={!currentGroupComplete||busy} onClick={()=>setCurrentStep(x=>Math.min(steps.length-1,x+1))}>Next</button>:<button type="submit" className="btn" disabled={busy||!currentGroupComplete||steps.some(step=>answers[step.q.id]===undefined)||Object.values(followups).flat().some(q=>answers[q.id]===undefined)}><ClipboardCheck size={17}/>{busy?"Submitting…":"Submit assessment"}</button>}</div>{message&&<p className="notice">{message}</p>}</form>}
  </main>
 }
