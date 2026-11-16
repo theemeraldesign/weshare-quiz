@@ -12,11 +12,10 @@ export default function ParticipantQuiz(){
  const {slug}=useParams<{slug:string}>();
  const userIdRef=useRef<string|null>(null);
  const [quiz,setQuiz]=useState<any>(null),[session,setSession]=useState<any>(null),[profile,setProfile]=useState<ParticipantProfile|null>(null);
- const [profileForm,setProfileForm]=useState({full_name:"",matric_number:"",department:""});
  const [answers,setAnswers]=useState<Record<string,number>>({}),[unlocked,setUnlocked]=useState<Record<string,boolean>>({}),[followups,setFollowups]=useState<Record<string,Q[]>>({});
  const [extra,setExtra]=useState<Record<string,string>>({}),[message,setMessage]=useState("");
  const [submitted,setSubmitted]=useState(false),[result,setResult]=useState<Result|null>(null),[lookupMode,setLookupMode]=useState(false);
- const [busy,setBusy]=useState(false),[authLoading,setAuthLoading]=useState(true),[profileSaving,setProfileSaving]=useState(false),[participantLoading,setParticipantLoading]=useState(false),[currentStep,setCurrentStep]=useState(0);
+ const [busy,setBusy]=useState(false),[authLoading,setAuthLoading]=useState(true),[participantLoading,setParticipantLoading]=useState(false),[currentStep,setCurrentStep]=useState(0);
  useEffect(()=>{if(!db)return;let active=true;
   db.rpc("get_public_quiz_v2",{p_slug:slug}).then(({data,error})=>{if(!active)return;if(error)setMessage(error.message);else setQuiz(data)});
   db.auth.getSession().then(({data})=>{if(!active)return;setSession(data.session);setAuthLoading(false)});
@@ -43,7 +42,6 @@ export default function ParticipantQuiz(){
    }
    if(!active)return;
    setProfile(saved);
-   setProfileForm({full_name:saved.full_name,matric_number:saved.matric_number,department:saved.department});
    const next:Record<string,string>={};
    for(const f of quiz.participant_fields||[]){
     const key=String(f.label).trim().toLowerCase();
@@ -87,11 +85,6 @@ export default function ParticipantQuiz(){
  const participantFields:any[]=quiz.participant_fields||[];
  const profileExtra:Record<string,string>={};for(const f of participantFields){const key=String(f.label).trim().toLowerCase();if(key==="name")profileExtra[f.label]=profile?.full_name||"";else if(key==="matric number"||key==="matric no")profileExtra[f.label]=profile?.matric_number||"";else if(key==="department")profileExtra[f.label]=profile?.department||"";}
  async function signIn(){setBusy(true);setMessage("");const {error}=await db!.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.href,queryParams:{prompt:"select_account"}}});if(error){setMessage(error.message);setBusy(false)}}
- async function saveProfile(e:React.FormEvent){e.preventDefault();if(!session?.user)return;setProfileSaving(true);setMessage("");
-  const row={user_id:session.user.id,full_name:profileForm.full_name.trim(),matric_number:profileForm.matric_number.trim().toUpperCase(),department:profileForm.department.trim(),email:(session.user.email||"").toLowerCase()};
-  const {data,error}=await db!.from("participant_profiles").insert(row).select("*").single();setProfileSaving(false);
-  if(error){setMessage(error.code==="23505"?"A profile already exists for this Google account. Refresh the page.":error.message);return}setProfile(data);
- }
  async function choose(q:Q,index:number){if(answers[q.id]!==undefined||busy)return;
   if(quiz.mode==="tutorial"){setBusy(true);setMessage("");const {data,error}=await db!.rpc("lock_tutorial_answer",{p_slug:slug,p_question_id:q.id,p_selected_option:index});
    if(error){setBusy(false);setMessage(error.message);return}
