@@ -74,7 +74,7 @@ button:active{filter:brightness(.96)}
 .progress-track>span{display:block;height:100%;background:var(--blue);border-radius:999px;transition:width .2s ease}
 .active-question{padding:22px;margin:0 0 16px}
 .active-question>strong{font-size:19px;line-height:1.6;margin:10px 0 16px}
-.participant-question-image{display:block;width:100%;max-height:420px;object-fit:contain;object-position:left center;margin:12px 0 18px;border-radius:12px;background:#f6f8fc;border:1px solid var(--line)}
+.participant-question-image{display:block;width:auto;height:auto;max-width:100%;max-height:min(70vh,520px);object-fit:contain;object-position:center;margin:12px auto 18px;border-radius:12px;background:#f6f8fc;border:1px solid var(--line)}
 .question-navigation{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px}
 .question-navigation .btn{min-width:118px}
 .question-image-preview{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin:10px 0}
