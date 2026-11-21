@@ -16,6 +16,8 @@ export default function ParticipantQuiz(){
  const [extra,setExtra]=useState<Record<string,string>>({}),[message,setMessage]=useState("");
  const [submitted,setSubmitted]=useState(false),[result,setResult]=useState<Result|null>(null),[lookupMode,setLookupMode]=useState(false);
  const [busy,setBusy]=useState(false),[authLoading,setAuthLoading]=useState(true),[participantLoading,setParticipantLoading]=useState(true),[currentStep,setCurrentStep]=useState(0);
+ const [gateState,setGateState]=useState({ready:false,required:false,accepted:false});
+ useEffect(()=>{if(typeof window==="undefined")return;const key=`weshare-gate:${slug}`;const params=new URLSearchParams(window.location.search);const incoming=params.get("wsp");const requested=params.get("wsg")==="1";if(incoming&&/^[a-f0-9]{48,128}$/i.test(incoming)){sessionStorage.setItem(`${key}:pass`,incoming);sessionStorage.setItem(`${key}:enabled`,"1");}if(requested)sessionStorage.setItem(`${key}:enabled`,"1");if(incoming||requested){params.delete("wsp");params.delete("wsg");const clean=window.location.pathname+(params.toString()?`?${params}`:"")+window.location.hash;window.history.replaceState({},document.title,clean);}const required=slug==="946817e24eb98f53"||sessionStorage.getItem(`${key}:enabled`)==="1";const accepted=!!sessionStorage.getItem(`${key}:pass`);setGateState({ready:true,required,accepted});},[slug]);
  useEffect(()=>{if(!db)return;let active=true;
   db.rpc("get_public_quiz_v2",{p_slug:slug}).then(({data,error})=>{if(!active)return;if(error)setMessage(error.message);else setQuiz(data)});
   db.auth.getSession().then(({data})=>{if(!active)return;setSession(data.session);setAuthLoading(false)});
@@ -75,6 +77,8 @@ export default function ParticipantQuiz(){
   return()=>{active=false};
  },[session,quiz,slug]);
  if(!db)return <main className="quizwrap"><section className="panel">Assessment service is not configured.</section></main>;
+ if(!gateState.ready)return <main className="quizwrap"><Brand/><section className="panel">Checking assessment access…</section></main>;
+ if(gateState.required&&!gateState.accepted)return <main className="quizwrap"><Brand/><section className="panel participant-auth"><span className="eyebrow">ASSESSMENT ACCESS</span><h2>Open this quiz from its WeShare lesson</h2><p>This assessment requires a fresh access pass. Return to the linked lesson on WeShare EduTech and open the quiz from there.</p></section></main>;
  if(!quiz)return <main className="quizwrap"><Brand/><section className="panel">{message||"Loading assessment…"}</section></main>;
  const primary:Q[]=(quiz.questions||[]).filter((q:Q)=>!q.parent_question_id).slice();
  const seed=(session?.user?.id||"guest")+":"+slug;const randomizedPrimary=[...primary].sort((a,b)=>stableHash(seed+":"+a.id)-stableHash(seed+":"+b.id)||a.id.localeCompare(b.id));
@@ -98,7 +102,7 @@ export default function ParticipantQuiz(){
   if(required.some(q=>answers[q.id]===undefined)){setMessage("Please answer every available question before submitting.");return}
   setBusy(true);setMessage("");const payload=required.map(q=>({question_id:q.id,selected_option:answers[q.id]}));
   const {data,error}=await db!.rpc("submit_assessment",{p_slug:slug,p_name:profile.full_name,p_email:profile.email,p_matric:profile.matric_number,p_extra:{...profileExtra,...extra},p_answers:payload});
-  setBusy(false);if(error){setMessage(error.message);return}setSubmitted(true);setLookupMode(quiz.mode==="exam");if(data?.score!==undefined)setResult(data);
+  setBusy(false);if(error){setMessage(error.message);return}if(gateState.required){sessionStorage.removeItem(`weshare-gate:${slug}:pass`);sessionStorage.removeItem(`weshare-gate:${slug}:enabled`);setGateState(s=>({...s,accepted:false}));}setSubmitted(true);setLookupMode(quiz.mode==="exam");if(data?.score!==undefined)setResult(data);
  }
  async function lookup(){if(!profile)return;setBusy(true);setMessage("");const {data,error}=await db!.rpc("lookup_assessment_result",{p_slug:slug,p_email:profile.email,p_matric:profile.matric_number});setBusy(false);if(error){setMessage(error.message);return}setResult(data)}
  const description=quiz.mode==="exam"?"Complete the questions and submit your work. Your result will be available when it is released.":"Work through the questions carefully. Your selections are saved as you go.";
