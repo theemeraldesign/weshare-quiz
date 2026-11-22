@@ -3,6 +3,7 @@ import {useCallback,useEffect,useMemo,useState} from "react";
 import {db} from "@/lib/db";
 import Brand from "@/components/Brand";
 import QuestionVideo from "@/components/QuestionVideo";
+import { getVideoSource } from "@/lib/video";
 import {Activity,BookOpen,Users,GraduationCap,ClipboardList,ShieldCheck,RefreshCw,LogOut,Search,Trash2,Save,Pencil,ExternalLink,LockKeyhole,Download,AlertTriangle,CheckCircle2,BarChart3,Image as ImageIcon,RotateCcw, X} from "lucide-react";
 
 const ADMIN_EMAIL="theemeraldesign@gmail.com";
@@ -46,7 +47,7 @@ export default function EmeraldAdmin(){
  async function action(label:string,fn:()=>any){setBusy(label);setNotice("");const result=await fn();setBusy("");if(result?.error){setNotice(result.error.message);return false}await load();setNotice(label+" completed.");return true}
  async function saveQuiz(){if(!db||!editQuiz)return;const {id,title,description,status,mode,allow_retakes,results_released,time_limit_minutes}=editQuiz;const values={title,description,status,mode,allow_retakes,results_released,time_limit_minutes:time_limit_minutes===""?null:Number(time_limit_minutes)};if(id){const ok=await action("Quiz updated",()=>db!.from("quizzes").update(values).eq("id",id));if(ok)setEditQuiz(null);return}const {error:instructorError}=await db.from("instructors").upsert({user_id:session.user.id,display_name:"Emerald Admin"},{onConflict:"user_id"});if(instructorError){setNotice(instructorError.message);return}const ok=await action("Quiz created",()=>db!.from("quizzes").insert({...values,owner_id:session.user.id,slug:"quiz-"+crypto.randomUUID().replace(/-/g,"").slice(0,12),participant_fields:[]}));if(ok)setEditQuiz(null)}
  async function saveProfile(){if(!db||!editProfile)return;const {user_id,full_name,matric_number,department,email}=editProfile;const ok=await action("Participant updated",()=>db!.from("participant_profiles").update({full_name,matric_number,department,email}).eq("user_id",user_id));if(ok)setEditProfile(null)}
- async function saveQuestion(){if(!db||!editQuestion)return;const {id,prompt,options,correct_option,points,image_url,video_url}=editQuestion;const ok=await action("Question updated",()=>db!.from("questions").update({prompt,options,correct_option:Number(correct_option),points:Number(points),image_url:image_url||null,video_url:video_url||null}).eq("id",id));if(ok)setEditQuestion(null)}
+ async function saveQuestion(){if(!db||!editQuestion)return;if(editQuestion.video_url&&!getVideoSource(editQuestion.video_url)){setNotice("Use a valid YouTube, Vimeo, or direct MP4/WebM video link.");return}const {id,prompt,options,correct_option,points,image_url,video_url}=editQuestion;const ok=await action("Question updated",()=>db!.from("questions").update({prompt,options,correct_option:Number(correct_option),points:Number(points),image_url:image_url||null,video_url:video_url||null}).eq("id",id));if(ok)setEditQuestion(null)}
  async function remove(kind:string,id:string,label:string){
   if(!db)return;let req:any;
   if(kind==="quiz")req=await db.from("quizzes").delete().eq("id",id);
