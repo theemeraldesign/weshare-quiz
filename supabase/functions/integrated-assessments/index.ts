@@ -130,6 +130,75 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
   return { quiz_id: quizId, version_id: version.id, status: config.status, question_count: rows.length };
 }
 
+
+async function attachExistingQuiz(user: any, payload: any) {
+  const lessonId = String(payload.lesson_id || "");
+  if (!/^[0-9a-f-]{36}$/i.test(lessonId)) throw new Error("Invalid lesson reference");
+  const post = await verifyLessonOwner(user, lessonId);
+  if (post.linked_quiz_id) throw new Error("This lesson already has a linked assessment");
+  let sourceUrl: URL;
+  try { sourceUrl = new URL(String(payload.quiz_url || "")); } catch { throw new Error("Paste a valid WeShare Quiz link"); }
+  if (!sourceUrl.hostname.endsWith("vercel.app") || !sourceUrl.hostname.includes("weshare-quiz")) {
+    throw new Error("Use a quiz link from weshare-quiz.vercel.app");
+  }
+  const pathParts = sourceUrl.pathname.split("/").filter(Boolean);
+  if (pathParts.length !== 2 || pathParts[0] !== "quiz") throw new Error("The link must point to a published quiz");
+  const slug = decodeURIComponent(pathParts[1]);
+  const { data: source, error: sourceError } = await admin.from("quizzes")
+    .select("id,owner_id,slug,title,description,mode,status,time_limit_minutes,participant_fields")
+    .eq("slug", slug).maybeSingle();
+  if (sourceError || !source) throw new Error("WeShare Quiz could not find that quiz");
+  if (source.mode !== "exam") throw new Error("Only exam quizzes can be attached. Tutorial quizzes keep their standalone flow.");
+  if (source.status !== "published") throw new Error("Publish the original quiz before attaching it");
+  if (!source.owner_id) throw new Error("This quiz has no standalone owner to verify");
+  const { data: ownerResult, error: ownerError } = await admin.auth.admin.getUserById(source.owner_id);
+  if (ownerError || !ownerResult.user?.email || ownerResult.user.email.toLowerCase() !== user.email.toLowerCase()) {
+    throw new Error("The quiz owner email must match your signed-in EduTech email");
+  }
+  const { data: sourceQuestions, error: questionsError } = await admin.from("questions")
+    .select("id,parent_question_id,position,kind,prompt,options,correct_option,points,image_url,video_url")
+    .eq("quiz_id", source.id).order("position", { ascending: true });
+  if (questionsError) throw questionsError;
+  if (!sourceQuestions?.length || sourceQuestions.some((q: any) => q.kind !== "primary")) {
+    throw new Error("This exam contains tutorial follow-up questions. Create a primary-question exam to attach it.");
+  }
+  const config = {
+    title: source.title, description: source.description, mode: "exam",
+    status: payload.publish === false ? "draft" : "published",
+    owner_id: null, owner_edutech_user_id: user.id, linked_lesson_id: lessonId,
+    attempt_limit: payload.attempt_limit == null ? null : Math.max(1, Math.min(100, Number(payload.attempt_limit))),
+    release_mode: ["automatic","manual","scheduled"].includes(payload.release_mode) ? payload.release_mode : "manual",
+    release_at: payload.release_mode === "scheduled" && payload.release_at ? payload.release_at : null,
+    time_limit_minutes: source.time_limit_minutes, participant_fields: source.participant_fields || [],
+    allow_retakes: true, edutech_results_released: false,
+  };
+  const { data: clone, error: cloneError } = await admin.from("quizzes").insert(config).select("id").single();
+  if (cloneError) throw cloneError;
+  const { data: version, error: versionError } = await admin.from("quiz_versions")
+    .insert({ quiz_id: clone.id, version_number: 1, snapshot: {}, created_by_edutech_user_id: user.id })
+    .select("id").single();
+  if (versionError) throw versionError;
+  const rows = sourceQuestions.map((q: any) => ({
+    quiz_id: clone.id, quiz_version_id: version.id, position: q.position, kind: "primary",
+    prompt: q.prompt, options: q.options, correct_option: q.correct_option, points: q.points,
+    image_url: q.image_url, video_url: q.video_url,
+  }));
+  const { data: copied, error: copyError } = await admin.from("questions").insert(rows)
+    .select("id,parent_question_id,position,kind,prompt,options,correct_option,points,image_url,video_url");
+  if (copyError) throw copyError;
+  const snapshot = { title: source.title, description: source.description, mode: "exam",
+    time_limit_minutes: source.time_limit_minutes, participant_fields: source.participant_fields || [], questions: copied || [] };
+  const { error: snapshotError } = await admin.from("quiz_versions").update({ snapshot }).eq("id", version.id);
+  if (snapshotError) throw snapshotError;
+  const patch = await fetch(`${EDUTECH_URL}/rest/v1/posts?id=eq.${encodeURIComponent(lessonId)}`, {
+    method: "PATCH",
+    headers: { apikey: EDUTECH_KEY, Authorization: `Bearer ${user.token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ linked_quiz_id: clone.id }),
+  });
+  if (!patch.ok) throw new Error("Quiz copy created, but the lesson link could not be saved");
+  return { quiz_id: clone.id, question_count: copied?.length || 0, attached_copy: true };
+}
+
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("Origin");
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors(origin) });
@@ -186,6 +255,7 @@ Deno.serve(async (req: Request) => {
       return json({ assessments: items }, 200, origin);
     }
     if (action === "create_or_update") return json(await createOrUpdateIntegratedQuiz(user, payload), 200, origin);
+    if (action === "attach_existing") return json(await attachExistingQuiz(user, payload), 200, origin);
     const session = await getSession(req, user.id);
     const { data: quiz, error: quizError } = await admin.from("quizzes")
       .select("id,title,status,edutech_results_released,attempt_limit,release_mode,release_at,owner_edutech_user_id")
