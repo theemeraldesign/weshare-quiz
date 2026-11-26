@@ -318,7 +318,7 @@ Deno.serve(async (req: Request) => {
         .select("selected_option,is_correct").eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("question_id", questionId).maybeSingle();
       if (existing) {
         const followups = question.kind === "primary" && !existing.is_correct
-          ? (version.snapshot?.questions || []).filter((item: any) => item.kind === "remedial" && item.parent_question_id === questionId)
+          ? (version.snapshot?.questions || []).filter((item: any) => item.kind === "remedial" && item.parent_question_id === questionId).map(({ correct_option, ...item }: any) => item)
           : [];
         return json({ selected_option: existing.selected_option, unlocks_remedial: question.kind === "primary" && !existing.is_correct, followups }, 200, origin);
       }
