@@ -164,7 +164,7 @@ Deno.serve(async (req: Request) => {
       }));
       return json({ session_token: sessionToken, expires_at: expiresAt, version_id: version.id,
         quiz: { id: quiz.id, title: version.snapshot.title, description: version.snapshot.description, mode: version.snapshot.mode,
-          time_limit_minutes: version.snapshot.time_limit_minutes, participant_fields: version.snapshot.participant_fields, questions } }, 200, origin);
+          time_limit_minutes: version.snapshot.time_limit_minutes, participant_fields: version.snapshot.participant_fields, attempt_limit: quiz.attempt_limit, release_mode: quiz.release_mode, questions } }, 200, origin);
     }
 
     const user = await authenticateEduTech(req);
@@ -182,7 +182,7 @@ Deno.serve(async (req: Request) => {
         const best = attempts.reduce((best: any, row: any) => !best || Number(row.score) / Math.max(1, Number(row.max_score)) > Number(best.score) / Math.max(1, Number(best.max_score)) ? row : best, null);
         return { quiz_id: quiz.id, lesson_id: quiz.linked_lesson_id, title: quiz.title, attempt_count: attempts.length,
           attempt_limit: quiz.attempt_limit, released, best_attempt: released ? best : null };
-      }).filter((item: any) => item.attempt_count > 0 || item.attempt_limit !== -1);
+      });
       return json({ assessments: items }, 200, origin);
     }
     if (action === "create_or_update") return json(await createOrUpdateIntegratedQuiz(user, payload), 200, origin);
@@ -250,7 +250,7 @@ Deno.serve(async (req: Request) => {
       ]);
       if (sessionsError || error) throw sessionsError || error;
       const people = new Map<string, any>();
-      for (const row of sessions || []) people.set(row.edutech_user_id, { edutech_user_id: row.edutech_user_id, started_at: row.created_at, submissions: 0, best_score: null, max_score: null, last_submitted_at: null });
+      for (const row of sessions || []) if (row.edutech_user_id !== quiz.owner_edutech_user_id) people.set(row.edutech_user_id, { edutech_user_id: row.edutech_user_id, started_at: row.created_at, submissions: 0, best_score: null, max_score: null, last_submitted_at: null });
       for (const row of rows || []) {
         const person = people.get(row.edutech_user_id) || { edutech_user_id: row.edutech_user_id, started_at: null, submissions: 0, best_score: null, max_score: null, last_submitted_at: null };
         person.submissions += 1;
