@@ -311,7 +311,21 @@ Deno.serve(async (req: Request) => {
         .eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).order("attempt_number", { ascending: true });
       if (error) throw error;
       const bestAttempt = (attempts || []).reduce((best: any, row: any) => !best || Number(row.score) / Math.max(1, Number(row.max_score)) > Number(best.score) / Math.max(1, Number(best.max_score)) ? row : best, null);
-      return json({ released: true, attempts: attempts || [], best_attempt: bestAttempt }, 200, origin);
+      let review: any[] = [];
+      if (bestAttempt) {
+        const { data: version } = await admin.from("quiz_versions").select("snapshot").eq("id", bestAttempt.quiz_version_id).maybeSingle();
+        const { data: answerRows } = await admin.from("answers")
+          .select("question_id,selected_option,is_correct,awarded_points")
+          .eq("submission_id", bestAttempt.id);
+        const answerMap = new Map((answerRows || []).map((row: any) => [row.question_id, row]));
+        review = (version?.snapshot?.questions || []).filter((q: any) => q.kind === "primary").map((q: any) => {
+          const answer: any = answerMap.get(q.id) || {};
+          return { id: q.id, prompt: q.prompt, options: q.options, correct_option: q.correct_option,
+            selected_option: answer.selected_option ?? null, is_correct: !!answer.is_correct,
+            awarded_points: Number(answer.awarded_points || 0), points: Number(q.points || 0) };
+        });
+      }
+      return json({ released, attempts: attempts || [], best_attempt: bestAttempt, review }, 200, origin);
     }
     if (action === "participants") {
       if (!isOwner) return json({ error: "Publisher access required" }, 403, origin);
