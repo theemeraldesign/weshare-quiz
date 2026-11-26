@@ -2,6 +2,13 @@ name: Integrated assessment endpoint smoke test
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/functions/integrated-assessments/**"
+      - "supabase/functions/integrated-assessment-editor/**"
+      - "supabase/migrations/**"
+      - ".github/workflows/integrated-assessment-smoke.yml"
   push:
     branches: [main]
     paths:
@@ -13,7 +20,19 @@ permissions:
   contents: read
 
 jobs:
+  validate-functions:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check integrated assessment functions
+        run: deno check supabase/functions/integrated-assessments/index.ts supabase/functions/integrated-assessment-editor/index.ts
+
   smoke:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
