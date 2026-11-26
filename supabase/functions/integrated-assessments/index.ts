@@ -256,19 +256,19 @@ Deno.serve(async (req: Request) => {
       const { count: attemptsUsed, error: attemptCountError } = await admin.from("submissions")
         .select("id", { count: "exact", head: true }).eq("quiz_id", quiz.id).eq("edutech_user_id", userId);
       if (attemptCountError) throw attemptCountError;
-      const canAttempt = (quiz.allow_retakes !== false || (attemptsUsed || 0) === 0) && (!quiz.attempt_limit || (attemptsUsed || 0) < quiz.attempt_limit);
+      const attemptNumber = (attemptsUsed || 0) + 1;\n      const canAttempt = (quiz.allow_retakes !== false || attemptNumber === 1) && (!quiz.attempt_limit || attemptNumber <= quiz.attempt_limit);
       const version = await snapshotForQuiz(quiz);
       const sessionToken = randomToken();
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
       const { error: sessionError } = await admin.from("edutech_integration_sessions").insert({
-        token_hash: await sha256(sessionToken), edutech_user_id: userId, lesson_id: lessonId, quiz_id: quizId, quiz_version_id: version.id, expires_at: expiresAt,
+        token_hash: await sha256(sessionToken), edutech_user_id: userId, lesson_id: lessonId, quiz_id: quizId, quiz_version_id: version.id, attempt_number: attemptNumber, expires_at: expiresAt,
       });
       if (sessionError) throw sessionError;
       const questions = (version.snapshot?.questions || []).map((q: any) => ({
         id: q.id, parent_question_id: q.parent_question_id, position: q.position,
         kind: q.kind, prompt: q.prompt, options: q.options, points: q.points, image_url: q.image_url, video_url: q.video_url,
       }));
-      return json({ session_token: sessionToken, expires_at: expiresAt, version_id: version.id, attempts_used: attemptsUsed || 0, can_attempt: canAttempt,
+      return json({ session_token: sessionToken, expires_at: expiresAt, version_id: version.id, attempts_used: attemptsUsed || 0, attempt_number: attemptNumber, can_attempt: canAttempt,
         quiz: { id: quiz.id, title: version.snapshot.title, description: version.snapshot.description, mode: version.snapshot.mode,
           time_limit_minutes: version.snapshot.time_limit_minutes, participant_fields: version.snapshot.participant_fields, attempt_limit: quiz.attempt_limit, release_mode: quiz.release_mode, questions } }, 200, origin);
     }
@@ -312,11 +312,11 @@ Deno.serve(async (req: Request) => {
       if (!Number.isInteger(selected) || selected < 0 || selected >= question.options.length) throw new Error("Choose a valid answer");
       if (question.kind === "remedial") {
         const { data: parentLock } = await admin.from("edutech_tutorial_answer_locks").select("is_correct")
-          .eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("question_id", question.parent_question_id).maybeSingle();
+          .eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("attempt_number", session.attempt_number).eq("question_id", question.parent_question_id).maybeSingle();
         if (!parentLock || parentLock.is_correct) throw new Error("This follow-up question is not unlocked");
       }
       const { data: existing } = await admin.from("edutech_tutorial_answer_locks")
-        .select("selected_option,is_correct").eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("question_id", questionId).maybeSingle();
+        .select("selected_option,is_correct").eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("attempt_number", session.attempt_number).eq("question_id", questionId).maybeSingle();
       if (existing) {
         const followups = question.kind === "primary" && !existing.is_correct
           ? (version.snapshot?.questions || []).filter((item: any) => item.kind === "remedial" && item.parent_question_id === questionId).map(({ correct_option, ...item }: any) => item)
@@ -325,7 +325,7 @@ Deno.serve(async (req: Request) => {
       }
       const correct = selected === Number(question.correct_option);
       const { error: lockError } = await admin.from("edutech_tutorial_answer_locks").insert({
-        quiz_id: quiz.id, edutech_user_id: user.id, question_id: questionId, selected_option: selected, is_correct: correct,
+        quiz_id: quiz.id, edutech_user_id: user.id, attempt_number: session.attempt_number, question_id: questionId, selected_option: selected, is_correct: correct,
       });
       if (lockError) throw lockError;
       const followups = question.kind === "primary" && !correct
@@ -355,7 +355,7 @@ Deno.serve(async (req: Request) => {
       const answerRows: any[] = [];
       if (quiz.mode === "tutorial") {
         const { data: locks, error: locksError } = await admin.from("edutech_tutorial_answer_locks")
-          .select("question_id,selected_option").eq("quiz_id", quiz.id).eq("edutech_user_id", user.id);
+          .select("question_id,selected_option").eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("attempt_number", session.attempt_number);
         if (locksError) throw locksError;
         const lockMap = new Map((locks || []).map((row: any) => [row.question_id, Number(row.selected_option)]));
         const primary = questions.filter((q: any) => q.kind === "primary");
