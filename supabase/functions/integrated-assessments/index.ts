@@ -75,7 +75,7 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
         q.options.some((option: unknown) => !String(option || "").trim()) ||
         !Number.isInteger(Number(q.correct_option)) || Number(q.correct_option) < 0 || Number(q.correct_option) >= q.options.length) {
       throw new Error(kind === "primary"
-        ? "Each primary question needs a prompt, five complete options, and one correct answer"
+        ? "Each primary question needs a prompt, two to five complete options, and one correct answer"
         : "Each remedial question needs a prompt, two complete options, and one correct answer");
     }
   }
