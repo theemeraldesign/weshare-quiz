@@ -299,6 +299,40 @@ Deno.serve(async (req: Request) => {
     if (quizError || !quiz) throw new Error("Assessment not found");
     const isOwner = quiz.owner_edutech_user_id === user.id;
 
+    if (action === "tutorial_answer") {
+      if (quiz.mode !== "tutorial" || quiz.status !== "published") throw new Error("Tutorial answers are not available");
+      const { data: version, error: versionError } = await admin.from("quiz_versions")
+        .select("snapshot").eq("id", session.quiz_version_id).eq("quiz_id", quiz.id).single();
+      if (versionError || !version) throw new Error("Tutorial version not found");
+      const questionId = String(payload.question_id || "");
+      const selected = Number(payload.selected_option);
+      const question = (version.snapshot?.questions || []).find((item: any) => item.id === questionId);
+      if (!question || !["primary", "remedial"].includes(question.kind)) throw new Error("Tutorial question not found");
+      if (!Number.isInteger(selected) || selected < 0 || selected >= question.options.length) throw new Error("Choose a valid answer");
+      if (question.kind === "remedial") {
+        const { data: parentLock } = await admin.from("edutech_tutorial_answer_locks").select("is_correct")
+          .eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("question_id", question.parent_question_id).maybeSingle();
+        if (!parentLock || parentLock.is_correct) throw new Error("This follow-up question is not unlocked");
+      }
+      const { data: existing } = await admin.from("edutech_tutorial_answer_locks")
+        .select("selected_option,is_correct").eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("question_id", questionId).maybeSingle();
+      if (existing) {
+        const followups = question.kind === "primary" && !existing.is_correct
+          ? (version.snapshot?.questions || []).filter((item: any) => item.kind === "remedial" && item.parent_question_id === questionId)
+          : [];
+        return json({ selected_option: existing.selected_option, unlocks_remedial: question.kind === "primary" && !existing.is_correct, followups }, 200, origin);
+      }
+      const correct = selected === Number(question.correct_option);
+      const { error: lockError } = await admin.from("edutech_tutorial_answer_locks").insert({
+        quiz_id: quiz.id, edutech_user_id: user.id, question_id: questionId, selected_option: selected, is_correct: correct,
+      });
+      if (lockError) throw lockError;
+      const followups = question.kind === "primary" && !correct
+        ? (version.snapshot?.questions || []).filter((item: any) => item.kind === "remedial" && item.parent_question_id === questionId)
+        : [];
+      if (question.kind === "primary" && !correct && followups.length !== 2) throw new Error("This tutorial question is missing its two follow-up questions");
+      return json({ selected_option: selected, unlocks_remedial: question.kind === "primary" && !correct, followups }, 200, origin);
+    }
     if (action === "submit") {
       if (quiz.status !== "published") throw new Error("This assessment is closed");
       if (quiz.time_limit_minutes && session.created_at) {
@@ -317,13 +351,37 @@ Deno.serve(async (req: Request) => {
       const questions = version.snapshot?.questions || [];
       let score = 0, maxScore = 0;
       const answerRows: any[] = [];
-      for (const q of questions) {
-        if (q.kind !== "primary") continue;
-        const points = Number(q.points || 0); maxScore += points;
-        const selected = Number(answers[q.id]);
-        const correct = Number.isInteger(selected) && selected === Number(q.correct_option);
-        if (correct) score += points;
-        if (Number.isInteger(selected)) answerRows.push({ question_id: q.id, selected_option: selected, is_correct: correct, awarded_points: correct ? points : 0 });
+      if (quiz.mode === "tutorial") {
+        const { data: locks, error: locksError } = await admin.from("edutech_tutorial_answer_locks")
+          .select("question_id,selected_option").eq("quiz_id", quiz.id).eq("edutech_user_id", user.id);
+        if (locksError) throw locksError;
+        const lockMap = new Map((locks || []).map((row: any) => [row.question_id, Number(row.selected_option)]));
+        const primary = questions.filter((q: any) => q.kind === "primary");
+        if (!primary.length || primary.some((q: any) => !lockMap.has(q.id))) throw new Error("Complete every primary question before submitting");
+        const incorrectPrimary = primary.filter((q: any) => lockMap.get(q.id) !== Number(q.correct_option));
+        const required = [...primary];
+        for (const parent of incorrectPrimary) {
+          const remedials = questions.filter((q: any) => q.kind === "remedial" && q.parent_question_id === parent.id);
+          if (remedials.length !== 2 || remedials.some((q: any) => !lockMap.has(q.id))) throw new Error("Complete both unlocked follow-up questions before submitting");
+          required.push(...remedials);
+        }
+        for (const q of required) {
+          const selected = Number(lockMap.get(q.id));
+          const correct = selected === Number(q.correct_option);
+          const points = Number(q.points || 0);
+          maxScore += points;
+          if (correct) score += points;
+          answerRows.push({ question_id: q.id, selected_option: selected, is_correct: correct, awarded_points: correct ? points : 0 });
+        }
+      } else {
+        for (const q of questions) {
+          if (q.kind !== "primary") continue;
+          const points = Number(q.points || 0); maxScore += points;
+          const selected = Number(answers[q.id]);
+          const correct = Number.isInteger(selected) && selected === Number(q.correct_option);
+          if (correct) score += points;
+          if (Number.isInteger(selected)) answerRows.push({ question_id: q.id, selected_option: selected, is_correct: correct, awarded_points: correct ? points : 0 });
+        }
       }
       const { data: submission, error: insertError } = await admin.from("submissions").insert({
         quiz_id: quiz.id, participant_name: String(payload.participant_name || "EduTech learner").slice(0, 160),
@@ -355,7 +413,7 @@ Deno.serve(async (req: Request) => {
           .select("question_id,selected_option,is_correct,awarded_points")
           .eq("submission_id", bestAttempt.id);
         const answerMap = new Map((answerRows || []).map((row: any) => [row.question_id, row]));
-        review = (version?.snapshot?.questions || []).filter((q: any) => q.kind === "primary").map((q: any) => {
+        review = (version?.snapshot?.questions || []).filter((q: any) => quiz.mode === "tutorial" || q.kind === "primary").map((q: any) => {
           const answer: any = answerMap.get(q.id) || {};
           return { id: q.id, prompt: q.prompt, options: q.options, correct_option: q.correct_option,
             selected_option: answer.selected_option ?? null, is_correct: !!answer.is_correct,
