@@ -69,9 +69,27 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
   const questionsInput = Array.isArray(payload.questions) ? payload.questions : [];
   if (!title || questionsInput.length < 1 || questionsInput.length > 200) throw new Error("Add a title and between 1 and 200 questions");
   for (const q of questionsInput) {
-    if (!String(q.prompt || "").trim() || !Array.isArray(q.options) || q.options.length < 2 ||
+    const kind = q.kind === "remedial" ? "remedial" : "primary";
+    const expectedOptions = kind === "primary" ? 5 : 2;
+    if (!String(q.prompt || "").trim() || !Array.isArray(q.options) || q.options.length !== expectedOptions ||
+        q.options.some((option: unknown) => !String(option || "").trim()) ||
         !Number.isInteger(Number(q.correct_option)) || Number(q.correct_option) < 0 || Number(q.correct_option) >= q.options.length) {
-      throw new Error("Each question needs a prompt, at least two options, and one correct answer");
+      throw new Error(kind === "primary"
+        ? "Each primary question needs a prompt, five complete options, and one correct answer"
+        : "Each remedial question needs a prompt, two complete options, and one correct answer");
+    }
+  }
+  if (payload.mode === "exam" && questionsInput.some((q: any) => q.kind === "remedial")) {
+    throw new Error("Remedial questions are only available in tutorial mode");
+  }
+  if (payload.mode === "tutorial") {
+    const primaryIndexes = questionsInput.map((q: any, i: number) => q.kind !== "remedial" ? i : -1).filter((i: number) => i >= 0);
+    for (const primaryIndex of primaryIndexes) {
+      const remedials = questionsInput.filter((q: any) => q.kind === "remedial" && Number(q.parent_index) === primaryIndex);
+      if (remedials.length !== 2) throw new Error("Each primary tutorial question needs exactly two remedial questions");
+    }
+    if (questionsInput.some((q: any) => q.kind === "remedial" && !primaryIndexes.includes(Number(q.parent_index)))) {
+      throw new Error("Each remedial question must belong to a primary question");
     }
   }
   const { data: existing, error: findError } = await admin.from("quizzes")
@@ -108,16 +126,30 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
   if (versionError) throw versionError;
   const rows = questionsInput.map((q: any, i: number) => ({
     quiz_id: quizId, quiz_version_id: version.id, position: i,
-    kind: "primary", prompt: String(q.prompt).trim().slice(0, 3000),
+    kind: q.kind === "remedial" ? "remedial" : "primary", parent_question_id: null,
+    prompt: String(q.prompt).trim().slice(0, 3000),
     options: q.options.map((o: unknown) => String(o).slice(0, 500)),
-    correct_option: Number(q.correct_option), points: Math.max(0, Math.min(100, Number(q.points ?? 1))),
+    correct_option: Number(q.correct_option), points: q.kind === "remedial" ? 0.5 : Math.max(0, Math.min(100, Number(q.points ?? 2))),
     image_url: q.image_url ? String(q.image_url).slice(0, 2000) : null,
     video_url: q.video_url ? String(q.video_url).slice(0, 2000) : null,
   }));
   const { data: inserted, error: questionsError } = await admin.from("questions").insert(rows)
     .select("id,parent_question_id,position,kind,prompt,options,correct_option,points,image_url,video_url");
   if (questionsError) throw questionsError;
-  const snapshot = { ...config, questions: inserted || [] };
+  const primaryIds = new Map<number, string>();
+  (inserted || []).forEach((q: any, i: number) => { if (q.kind === "primary") primaryIds.set(i, q.id); });
+  const versionQuestions = (inserted || []).map((q: any, i: number) => {
+    const source = questionsInput[i];
+    const parentId = q.kind === "remedial" ? primaryIds.get(Number(source.parent_index)) || null : null;
+    return { ...q, parent_question_id: parentId };
+  });
+  for (const q of versionQuestions) {
+    if (q.kind === "remedial") {
+      const { error } = await admin.from("questions").update({ parent_question_id: q.parent_question_id }).eq("id", q.id);
+      if (error) throw error;
+    }
+  }
+  const snapshot = { ...config, questions: versionQuestions };
   const { error: snapshotError } = await admin.from("quiz_versions").update({ snapshot }).eq("id", version.id);
   if (snapshotError) throw snapshotError;
   const { error: linkError } = await fetch(`${EDUTECH_URL}/rest/v1/posts?id=eq.${encodeURIComponent(lessonId)}`, {
