@@ -219,12 +219,10 @@ Deno.serve(async (req: Request) => {
         .select("id,title,description,mode,status,time_limit_minutes,participant_fields,attempt_limit,release_mode,release_at,owner_edutech_user_id,linked_lesson_id")
         .eq("id", quizId).eq("linked_lesson_id", lessonId).maybeSingle();
       if (error || !quiz || quiz.status !== "published") return json({ error: "This lesson has no available published assessment" }, 404, origin);
-      if (quiz.attempt_limit) {
-        const { count, error: attemptCountError } = await admin.from("submissions")
-          .select("id", { count: "exact", head: true }).eq("quiz_id", quiz.id).eq("edutech_user_id", userId);
-        if (attemptCountError) throw attemptCountError;
-        if ((count || 0) >= quiz.attempt_limit) return json({ error: "You have used all permitted attempts for this assessment" }, 403, origin);
-      }
+      const { count: attemptsUsed, error: attemptCountError } = await admin.from("submissions")
+        .select("id", { count: "exact", head: true }).eq("quiz_id", quiz.id).eq("edutech_user_id", userId);
+      if (attemptCountError) throw attemptCountError;
+      const canAttempt = !quiz.attempt_limit || (attemptsUsed || 0) < quiz.attempt_limit;
       const version = await snapshotForQuiz(quiz);
       const sessionToken = randomToken();
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -236,7 +234,7 @@ Deno.serve(async (req: Request) => {
         id: q.id, parent_question_id: q.parent_question_id, position: q.position,
         kind: q.kind, prompt: q.prompt, options: q.options, points: q.points, image_url: q.image_url, video_url: q.video_url,
       }));
-      return json({ session_token: sessionToken, expires_at: expiresAt, version_id: version.id,
+      return json({ session_token: sessionToken, expires_at: expiresAt, version_id: version.id, attempts_used: attemptsUsed || 0, can_attempt: canAttempt,
         quiz: { id: quiz.id, title: version.snapshot.title, description: version.snapshot.description, mode: version.snapshot.mode,
           time_limit_minutes: version.snapshot.time_limit_minutes, participant_fields: version.snapshot.participant_fields, attempt_limit: quiz.attempt_limit, release_mode: quiz.release_mode, questions } }, 200, origin);
     }
