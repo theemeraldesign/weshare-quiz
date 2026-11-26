@@ -22,7 +22,7 @@ Deno.serve(async (req: Request) => {
     const post = await postResponse.json();
     if (!post?.id || post.author_user_id !== user.id) return json({ error: "Only the lesson publisher can edit this assessment" }, 403, origin);
     if (!post.linked_quiz_id) return json({ quiz: null }, 200, origin);
-    const { data: quiz, error } = await admin.from("quizzes").select("id,title,description,status,attempt_limit,release_mode,release_at,time_limit_minutes")
+    const { data: quiz, error } = await admin.from("quizzes").select("id,title,description,status,mode,participant_fields,attempt_limit,release_mode,release_at,time_limit_minutes")
       .eq("id", post.linked_quiz_id).eq("owner_edutech_user_id", user.id).single();
     if (error || !quiz) throw new Error("Linked assessment not found");
     const { data: version, error: versionError } = await admin.from("quiz_versions").select("id,version_number,snapshot")

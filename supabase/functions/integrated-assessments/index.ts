@@ -28,7 +28,7 @@ async function authenticateEduTech(req: Request) {
   return { id: String(user.id), email: String(user.email || ""), token };
 }
 async function verifyLessonOwner(user: any, lessonId: string) {
-  const response = await fetch(`${EDUTECH_URL}/rest/v1/posts?id=eq.${encodeURIComponent(lessonId)}&select=id,author_user_id,title`, {
+  const response = await fetch(`${EDUTECH_URL}/rest/v1/posts?id=eq.${encodeURIComponent(lessonId)}&select=id,author_user_id,title,linked_quiz_id`, {
     headers: { apikey: EDUTECH_KEY, Authorization: `Bearer ${user.token}`, Accept: "application/vnd.pgrst.object+json" },
   });
   if (!response.ok) throw new Error("Unable to verify lesson ownership");
@@ -80,12 +80,12 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
   if (existing && existing.owner_edutech_user_id !== user.id) throw new Error("This lesson already has a linked assessment");
   const config = {
     title, description: String(payload.description || "").slice(0, 2000),
-    mode: "exam", status: payload.publish === false ? "draft" : "published",
+    mode: payload.mode === "tutorial" ? "tutorial" : "exam", status: payload.publish === false ? "draft" : "published",
     attempt_limit: payload.attempt_limit == null ? null : Math.max(1, Math.min(100, Number(payload.attempt_limit))),
     release_mode: ["automatic","manual","scheduled"].includes(payload.release_mode) ? payload.release_mode : "manual",
     release_at: payload.release_mode === "scheduled" && payload.release_at ? payload.release_at : null,
     time_limit_minutes: payload.time_limit_minutes == null ? null : Math.max(1, Math.min(600, Number(payload.time_limit_minutes))),
-    participant_fields: [],
+    participant_fields: Array.isArray(payload.participant_fields) ? payload.participant_fields.slice(0,20).map((field: any) => ({ label: String(field.label || "").trim().slice(0,80), required: !!field.required })).filter((field: any) => field.label) : [],
   };
   let quizId = existing?.id;
   if (!quizId) {
