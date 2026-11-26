@@ -39,7 +39,7 @@ async function verifyLessonOwner(user: any, lessonId: string) {
 async function getSession(body: any, userId: string) {
   const token = String(body.session_token || "");
   if (token.length < 32) throw new Error("Assessment session is missing");
-  const { data, error } = await admin.from("edutech_integration_sessions").select("id,edutech_user_id,lesson_id,quiz_id,quiz_version_id,expires_at,revoked_at,created_at").eq("token_hash", await sha256(token)).maybeSingle();
+  const { data, error } = await admin.from("edutech_integration_sessions").select("id,edutech_user_id,lesson_id,quiz_id,quiz_version_id,attempt_number,expires_at,revoked_at,created_at").eq("token_hash", await sha256(token)).maybeSingle();
   if (error || !data || data.edutech_user_id !== userId || data.revoked_at || new Date(data.expires_at).getTime() <= Date.now()) {
     throw new Error("Assessment session expired. Reopen the lesson to continue.");
   }
@@ -69,9 +69,27 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
   const questionsInput = Array.isArray(payload.questions) ? payload.questions : [];
   if (!title || questionsInput.length < 1 || questionsInput.length > 200) throw new Error("Add a title and between 1 and 200 questions");
   for (const q of questionsInput) {
-    if (!String(q.prompt || "").trim() || !Array.isArray(q.options) || q.options.length < 2 ||
+    const kind = q.kind === "remedial" ? "remedial" : "primary";
+    const validOptionCount = kind === "primary" ? q.options?.length >= 2 && q.options?.length <= 5 : q.options?.length === 2;
+    if (!String(q.prompt || "").trim() || !Array.isArray(q.options) || !validOptionCount ||
+        q.options.some((option: unknown) => !String(option || "").trim()) ||
         !Number.isInteger(Number(q.correct_option)) || Number(q.correct_option) < 0 || Number(q.correct_option) >= q.options.length) {
-      throw new Error("Each question needs a prompt, at least two options, and one correct answer");
+      throw new Error(kind === "primary"
+        ? "Each primary question needs a prompt, two to five complete options, and one correct answer"
+        : "Each remedial question needs a prompt, two complete options, and one correct answer");
+    }
+  }
+  if (payload.mode === "exam" && questionsInput.some((q: any) => q.kind === "remedial")) {
+    throw new Error("Remedial questions are only available in tutorial mode");
+  }
+  if (payload.mode === "tutorial") {
+    const primaryIndexes = questionsInput.map((q: any, i: number) => q.kind !== "remedial" ? i : -1).filter((i: number) => i >= 0);
+    for (const primaryIndex of primaryIndexes) {
+      const remedials = questionsInput.filter((q: any) => q.kind === "remedial" && Number(q.parent_index) === primaryIndex);
+      if (remedials.length !== 2) throw new Error("Each primary tutorial question needs exactly two remedial questions");
+    }
+    if (questionsInput.some((q: any) => q.kind === "remedial" && !primaryIndexes.includes(Number(q.parent_index)))) {
+      throw new Error("Each remedial question must belong to a primary question");
     }
   }
   const { data: existing, error: findError } = await admin.from("quizzes")
@@ -86,12 +104,13 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
     release_at: payload.release_mode === "scheduled" && payload.release_at ? payload.release_at : null,
     time_limit_minutes: payload.time_limit_minutes == null ? null : Math.max(1, Math.min(600, Number(payload.time_limit_minutes))),
     participant_fields: Array.isArray(payload.participant_fields) ? payload.participant_fields.slice(0,20).map((field: any) => ({ label: String(field.label || "").trim().slice(0,80), required: !!field.required })).filter((field: any) => field.label) : [],
+    allow_retakes: payload.allow_retakes !== false,
   };
   let quizId = existing?.id;
   if (!quizId) {
     const { data: created, error } = await admin.from("quizzes").insert({
       ...config, owner_id: null, owner_edutech_user_id: user.id, linked_lesson_id: lessonId,
-      allow_retakes: true, edutech_results_released: false,
+      edutech_results_released: false,
     }).select("id").single();
     if (error) throw error;
     quizId = created.id;
@@ -108,16 +127,31 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
   if (versionError) throw versionError;
   const rows = questionsInput.map((q: any, i: number) => ({
     quiz_id: quizId, quiz_version_id: version.id, position: i,
-    kind: "primary", prompt: String(q.prompt).trim().slice(0, 3000),
+    kind: q.kind === "remedial" ? "remedial" : "primary", parent_question_id: null,
+    prompt: String(q.prompt).trim().slice(0, 3000),
     options: q.options.map((o: unknown) => String(o).slice(0, 500)),
-    correct_option: Number(q.correct_option), points: Math.max(0, Math.min(100, Number(q.points ?? 1))),
+    correct_option: Number(q.correct_option), points: q.kind === "remedial" ? 0.5 : Math.max(0, Math.min(100, Number(q.points ?? 2))),
     image_url: q.image_url ? String(q.image_url).slice(0, 2000) : null,
     video_url: q.video_url ? String(q.video_url).slice(0, 2000) : null,
   }));
   const { data: inserted, error: questionsError } = await admin.from("questions").insert(rows)
     .select("id,parent_question_id,position,kind,prompt,options,correct_option,points,image_url,video_url");
   if (questionsError) throw questionsError;
-  const snapshot = { ...config, questions: inserted || [] };
+  const orderedInserted = [...(inserted || [])].sort((a: any, b: any) => Number(a.position) - Number(b.position));
+  const primaryIds = new Map<number, string>();
+  orderedInserted.forEach((q: any, i: number) => { if (q.kind === "primary") primaryIds.set(i, q.id); });
+  const versionQuestions = orderedInserted.map((q: any, i: number) => {
+    const source = questionsInput[i];
+    const parentId = q.kind === "remedial" ? primaryIds.get(Number(source.parent_index)) || null : null;
+    return { ...q, parent_question_id: parentId };
+  });
+  for (const q of versionQuestions) {
+    if (q.kind === "remedial") {
+      const { error } = await admin.from("questions").update({ parent_question_id: q.parent_question_id }).eq("id", q.id);
+      if (error) throw error;
+    }
+  }
+  const snapshot = { ...config, questions: versionQuestions };
   const { error: snapshotError } = await admin.from("quiz_versions").update({ snapshot }).eq("id", version.id);
   if (snapshotError) throw snapshotError;
   const { error: linkError } = await fetch(`${EDUTECH_URL}/rest/v1/posts?id=eq.${encodeURIComponent(lessonId)}`, {
@@ -216,25 +250,26 @@ Deno.serve(async (req: Request) => {
       if (!redeemed.ok || !identity?.user_id) return json({ error: identity?.error || "Launch ticket expired or already used" }, 401, origin);
       const lessonId = String(identity.lesson_id), quizId = String(identity.quiz_id), userId = String(identity.user_id);
       const { data: quiz, error } = await admin.from("quizzes")
-        .select("id,title,description,mode,status,time_limit_minutes,participant_fields,attempt_limit,release_mode,release_at,owner_edutech_user_id,linked_lesson_id")
+        .select("id,title,description,mode,status,time_limit_minutes,participant_fields,attempt_limit,allow_retakes,release_mode,release_at,owner_edutech_user_id,linked_lesson_id")
         .eq("id", quizId).eq("linked_lesson_id", lessonId).maybeSingle();
       if (error || !quiz || quiz.status !== "published") return json({ error: "This lesson has no available published assessment" }, 404, origin);
       const { count: attemptsUsed, error: attemptCountError } = await admin.from("submissions")
         .select("id", { count: "exact", head: true }).eq("quiz_id", quiz.id).eq("edutech_user_id", userId);
       if (attemptCountError) throw attemptCountError;
-      const canAttempt = !quiz.attempt_limit || (attemptsUsed || 0) < quiz.attempt_limit;
+      const attemptNumber = (attemptsUsed || 0) + 1;
+      const canAttempt = (quiz.allow_retakes !== false || attemptNumber === 1) && (!quiz.attempt_limit || attemptNumber <= quiz.attempt_limit);
       const version = await snapshotForQuiz(quiz);
       const sessionToken = randomToken();
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
       const { error: sessionError } = await admin.from("edutech_integration_sessions").insert({
-        token_hash: await sha256(sessionToken), edutech_user_id: userId, lesson_id: lessonId, quiz_id: quizId, quiz_version_id: version.id, expires_at: expiresAt,
+        token_hash: await sha256(sessionToken), edutech_user_id: userId, lesson_id: lessonId, quiz_id: quizId, quiz_version_id: version.id, attempt_number: attemptNumber, expires_at: expiresAt,
       });
       if (sessionError) throw sessionError;
       const questions = (version.snapshot?.questions || []).map((q: any) => ({
         id: q.id, parent_question_id: q.parent_question_id, position: q.position,
         kind: q.kind, prompt: q.prompt, options: q.options, points: q.points, image_url: q.image_url, video_url: q.video_url,
       }));
-      return json({ session_token: sessionToken, expires_at: expiresAt, version_id: version.id, attempts_used: attemptsUsed || 0, can_attempt: canAttempt,
+      return json({ session_token: sessionToken, expires_at: expiresAt, version_id: version.id, attempts_used: attemptsUsed || 0, attempt_number: attemptNumber, can_attempt: canAttempt,
         quiz: { id: quiz.id, title: version.snapshot.title, description: version.snapshot.description, mode: version.snapshot.mode,
           time_limit_minutes: version.snapshot.time_limit_minutes, participant_fields: version.snapshot.participant_fields, attempt_limit: quiz.attempt_limit, release_mode: quiz.release_mode, questions } }, 200, origin);
     }
@@ -261,11 +296,45 @@ Deno.serve(async (req: Request) => {
     if (action === "attach_existing") return json(await attachExistingQuiz(user, payload), 200, origin);
     const session = await getSession(payload, user.id);
     const { data: quiz, error: quizError } = await admin.from("quizzes")
-      .select("id,title,status,edutech_results_released,attempt_limit,release_mode,release_at,owner_edutech_user_id,time_limit_minutes")
+      .select("id,title,status,mode,edutech_results_released,attempt_limit,allow_retakes,release_mode,release_at,owner_edutech_user_id,time_limit_minutes,participant_fields")
       .eq("id", session.quiz_id).single();
     if (quizError || !quiz) throw new Error("Assessment not found");
     const isOwner = quiz.owner_edutech_user_id === user.id;
 
+    if (action === "tutorial_answer") {
+      if (quiz.mode !== "tutorial" || quiz.status !== "published") throw new Error("Tutorial answers are not available");
+      const { data: version, error: versionError } = await admin.from("quiz_versions")
+        .select("snapshot").eq("id", session.quiz_version_id).eq("quiz_id", quiz.id).single();
+      if (versionError || !version) throw new Error("Tutorial version not found");
+      const questionId = String(payload.question_id || "");
+      const selected = Number(payload.selected_option);
+      const question = (version.snapshot?.questions || []).find((item: any) => item.id === questionId);
+      if (!question || !["primary", "remedial"].includes(question.kind)) throw new Error("Tutorial question not found");
+      if (!Number.isInteger(selected) || selected < 0 || selected >= question.options.length) throw new Error("Choose a valid answer");
+      if (question.kind === "remedial") {
+        const { data: parentLock } = await admin.from("edutech_tutorial_answer_locks").select("is_correct")
+          .eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("attempt_number", session.attempt_number).eq("question_id", question.parent_question_id).maybeSingle();
+        if (!parentLock || parentLock.is_correct) throw new Error("This follow-up question is not unlocked");
+      }
+      const { data: existing } = await admin.from("edutech_tutorial_answer_locks")
+        .select("selected_option,is_correct").eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("attempt_number", session.attempt_number).eq("question_id", questionId).maybeSingle();
+      if (existing) {
+        const followups = question.kind === "primary" && !existing.is_correct
+          ? (version.snapshot?.questions || []).filter((item: any) => item.kind === "remedial" && item.parent_question_id === questionId).map(({ correct_option, ...item }: any) => item)
+          : [];
+        return json({ selected_option: existing.selected_option, unlocks_remedial: question.kind === "primary" && !existing.is_correct, followups }, 200, origin);
+      }
+      const correct = selected === Number(question.correct_option);
+      const { error: lockError } = await admin.from("edutech_tutorial_answer_locks").insert({
+        quiz_id: quiz.id, edutech_user_id: user.id, attempt_number: session.attempt_number, question_id: questionId, selected_option: selected, is_correct: correct,
+      });
+      if (lockError) throw lockError;
+      const followups = question.kind === "primary" && !correct
+        ? (version.snapshot?.questions || []).filter((item: any) => item.kind === "remedial" && item.parent_question_id === questionId)
+        : [];
+      if (question.kind === "primary" && !correct && followups.length !== 2) throw new Error("This tutorial question is missing its two follow-up questions");
+      return json({ selected_option: selected, unlocks_remedial: question.kind === "primary" && !correct, followups }, 200, origin);
+    }
     if (action === "submit") {
       if (quiz.status !== "published") throw new Error("This assessment is closed");
       if (quiz.time_limit_minutes && session.created_at) {
@@ -279,22 +348,53 @@ Deno.serve(async (req: Request) => {
         .eq("quiz_id", quiz.id).eq("edutech_user_id", user.id);
       if (countError) throw countError;
       const attemptNumber = (count || 0) + 1;
+      if (quiz.allow_retakes === false && attemptNumber > 1) throw new Error("You have already submitted this assessment");
       if (quiz.attempt_limit && attemptNumber > quiz.attempt_limit) throw new Error("You have used all permitted attempts");
       const answers = payload.answers && typeof payload.answers === "object" ? payload.answers : {};
       const questions = version.snapshot?.questions || [];
       let score = 0, maxScore = 0;
       const answerRows: any[] = [];
-      for (const q of questions) {
-        if (q.kind !== "primary") continue;
-        const points = Number(q.points || 0); maxScore += points;
-        const selected = Number(answers[q.id]);
-        const correct = Number.isInteger(selected) && selected === Number(q.correct_option);
-        if (correct) score += points;
-        if (Number.isInteger(selected)) answerRows.push({ question_id: q.id, selected_option: selected, is_correct: correct, awarded_points: correct ? points : 0 });
+      if (quiz.mode === "tutorial") {
+        const { data: locks, error: locksError } = await admin.from("edutech_tutorial_answer_locks")
+          .select("question_id,selected_option").eq("quiz_id", quiz.id).eq("edutech_user_id", user.id).eq("attempt_number", session.attempt_number);
+        if (locksError) throw locksError;
+        const lockMap = new Map((locks || []).map((row: any) => [row.question_id, Number(row.selected_option)]));
+        const primary = questions.filter((q: any) => q.kind === "primary");
+        if (!primary.length || primary.some((q: any) => !lockMap.has(q.id))) throw new Error("Complete every primary question before submitting");
+        const incorrectPrimary = primary.filter((q: any) => lockMap.get(q.id) !== Number(q.correct_option));
+        const required = [...primary];
+        for (const parent of incorrectPrimary) {
+          const remedials = questions.filter((q: any) => q.kind === "remedial" && q.parent_question_id === parent.id);
+          if (remedials.length !== 2 || remedials.some((q: any) => !lockMap.has(q.id))) throw new Error("Complete both unlocked follow-up questions before submitting");
+          required.push(...remedials);
+        }
+        for (const q of required) {
+          const selected = Number(lockMap.get(q.id));
+          const correct = selected === Number(q.correct_option);
+          const points = Number(q.points || 0);
+          maxScore += points;
+          if (correct) score += points;
+          answerRows.push({ question_id: q.id, selected_option: selected, is_correct: correct, awarded_points: correct ? points : 0 });
+        }
+      } else {
+        for (const q of questions) {
+          if (q.kind !== "primary") continue;
+          const points = Number(q.points || 0); maxScore += points;
+          const selected = Number(answers[q.id]);
+          const correct = Number.isInteger(selected) && selected === Number(q.correct_option);
+          if (correct) score += points;
+          if (Number.isInteger(selected)) answerRows.push({ question_id: q.id, selected_option: selected, is_correct: correct, awarded_points: correct ? points : 0 });
+        }
+      }
+      const participantName = String(payload.participant_name || "").trim();
+      if (!participantName) throw new Error("Enter your name before submitting");
+      const extraDetails = payload.extra_details && typeof payload.extra_details === "object" ? payload.extra_details : {};
+      for (const field of Array.isArray(quiz.participant_fields) ? quiz.participant_fields : []) {
+        if (field.required && !String(extraDetails[field.label] || "").trim()) throw new Error(`Complete the required field: ${field.label}`);
       }
       const { data: submission, error: insertError } = await admin.from("submissions").insert({
-        quiz_id: quiz.id, participant_name: String(payload.participant_name || "EduTech learner").slice(0, 160),
-        email: user.email, matric_number: "", extra_details: { source: "edutech", lesson_id: session.lesson_id },
+        quiz_id: quiz.id, participant_name: participantName.slice(0, 160),
+        email: user.email, matric_number: String(payload.matric_number || "").slice(0, 100), extra_details: { source: "edutech", lesson_id: session.lesson_id, ...extraDetails },
         score, max_score: maxScore, edutech_user_id: user.id, quiz_version_id: version.id, attempt_number: attemptNumber,
       }).select("id,score,max_score,submitted_at,attempt_number").single();
       if (insertError) throw insertError;
@@ -322,7 +422,7 @@ Deno.serve(async (req: Request) => {
           .select("question_id,selected_option,is_correct,awarded_points")
           .eq("submission_id", bestAttempt.id);
         const answerMap = new Map((answerRows || []).map((row: any) => [row.question_id, row]));
-        review = (version?.snapshot?.questions || []).filter((q: any) => q.kind === "primary").map((q: any) => {
+        review = (version?.snapshot?.questions || []).filter((q: any) => quiz.mode === "tutorial" || q.kind === "primary").map((q: any) => {
           const answer: any = answerMap.get(q.id) || {};
           return { id: q.id, prompt: q.prompt, options: q.options, correct_option: q.correct_option,
             selected_option: answer.selected_option ?? null, is_correct: !!answer.is_correct,

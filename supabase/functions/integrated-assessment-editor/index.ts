@@ -14,7 +14,7 @@ Deno.serve(async (req: Request) => {
     const auth = await fetch(`${EDUTECH_URL}/auth/v1/user`, { headers: { apikey: EDUTECH_KEY, Authorization: `Bearer ${token}` } });
     if (!auth.ok) return json({ error: "Your EduTech session is invalid or expired" }, 401, origin);
     const user = await auth.json();
-    const { lesson_id } = await req.json();
+    const { lesson_id, action = "get", value, participant_fields: requestedParticipantFields } = await req.json();
     const postResponse = await fetch(`${EDUTECH_URL}/rest/v1/posts?id=eq.${encodeURIComponent(String(lesson_id))}&select=id,author_user_id,linked_quiz_id`, {
       headers: { apikey: EDUTECH_KEY, Authorization: `Bearer ${token}`, Accept: "application/vnd.pgrst.object+json" },
     });
@@ -22,17 +22,74 @@ Deno.serve(async (req: Request) => {
     const post = await postResponse.json();
     if (!post?.id || post.author_user_id !== user.id) return json({ error: "Only the lesson publisher can edit this assessment" }, 403, origin);
     if (!post.linked_quiz_id) return json({ quiz: null }, 200, origin);
-    const { data: quiz, error } = await admin.from("quizzes").select("id,title,description,status,mode,participant_fields,attempt_limit,release_mode,release_at,time_limit_minutes")
+    const { data: quiz, error } = await admin.from("quizzes").select("id,title,description,status,mode,participant_fields,attempt_limit,release_mode,release_at,time_limit_minutes,allow_retakes,edutech_results_released")
       .eq("id", post.linked_quiz_id).eq("owner_edutech_user_id", user.id).single();
     if (error || !quiz) throw new Error("Linked assessment not found");
+    if (action === "delete") {
+      const unlink = await fetch(`${EDUTECH_URL}/rest/v1/posts?id=eq.${encodeURIComponent(String(lesson_id))}`, {
+        method: "PATCH",
+        headers: { apikey: EDUTECH_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ linked_quiz_id: null }),
+      });
+      if (!unlink.ok) throw new Error("The lesson link could not be cleared. The assessment was not deleted.");
+      const { error: deleteError } = await admin.from("quizzes").delete().eq("id", quiz.id).eq("owner_edutech_user_id", user.id);
+      if (deleteError) throw deleteError;
+      return json({ deleted: true }, 200, origin);
+    }
+    if (action === "fields") {
+      const participant_fields = Array.isArray(requestedParticipantFields)
+        ? requestedParticipantFields.slice(0, 20).map((field: any) => ({ label: String(field.label || "").trim().slice(0, 80), required: !!field.required })).filter((field: any) => field.label)
+        : [];
+      const { error: updateError } = await admin.from("quizzes").update({ participant_fields }).eq("id", quiz.id);
+      if (updateError) throw updateError;
+      return json({ participant_fields }, 200, origin);
+    }
+    if (action === "retakes") {
+      const { error: updateError } = await admin.from("quizzes").update({ allow_retakes: value === true }).eq("id", quiz.id);
+      if (updateError) throw updateError;
+      return json({ allow_retakes: value === true }, 200, origin);
+    }
+    if (action === "release") {
+      const { error: updateError } = await admin.from("quizzes").update({ edutech_results_released: value === true }).eq("id", quiz.id);
+      if (updateError) throw updateError;
+      return json({ released: value === true }, 200, origin);
+    }
+    if (action === "publish") {
+      const { data: latest } = await admin.from("quiz_versions").select("snapshot").eq("quiz_id", quiz.id).order("version_number", { ascending: false }).limit(1).maybeSingle();
+      if (!latest?.snapshot?.questions?.length) throw new Error("Add at least one question before publishing");
+      const { error: updateError } = await admin.from("quizzes").update({ status: "published" }).eq("id", quiz.id);
+      if (updateError) throw updateError;
+      return json({ published: true }, 200, origin);
+    }
     const { data: version, error: versionError } = await admin.from("quiz_versions").select("id,version_number,snapshot")
       .eq("quiz_id", quiz.id).order("version_number", { ascending: false }).limit(1).single();
     if (versionError) throw versionError;
-    const questions = (version.snapshot?.questions || []).map((q: any) => ({
+    const snapshotQuestions = version.snapshot?.questions || [];
+    const questions = snapshotQuestions.map((q: any) => ({
+      kind: q.kind || "primary",
+      parent_index: q.kind === "remedial" ? snapshotQuestions.findIndex((parent: any) => parent.id === q.parent_question_id) : null,
       prompt: q.prompt, options: q.options, correct_option: q.correct_option, points: q.points,
       image_url: q.image_url || "", video_url: q.video_url || "",
     }));
-    return json({ quiz, version_id: version.id, version_number: version.version_number, questions }, 200, origin);
+    const { data: submissions, error: submissionsError } = await admin.from("submissions")
+      .select("id,edutech_user_id,participant_name,email,matric_number,extra_details,score,max_score,submitted_at,attempt_number")
+      .eq("quiz_id", quiz.id).order("submitted_at", { ascending: false });
+    if (submissionsError) throw submissionsError;
+    const profileIds = [...new Set((submissions || []).map((row: any) => row.edutech_user_id).filter(Boolean))];
+    let profiles: any[] = [];
+    if (profileIds.length) {
+      const profileResponse = await fetch(`${EDUTECH_URL}/rest/v1/profiles?user_id=in.(${profileIds.join(",")})&select=user_id,username,surname,othernames`, {
+        headers: { apikey: EDUTECH_KEY, Authorization: `Bearer ${token}` },
+      });
+      if (profileResponse.ok) profiles = await profileResponse.json();
+    }
+    const profileMap = new Map(profiles.map((profile: any) => [profile.user_id, profile]));
+    const visibleSubmissions = (submissions || []).map((row: any) => {
+      const profile: any = profileMap.get(row.edutech_user_id) || {};
+      const displayName = [profile.surname, profile.othernames].filter(Boolean).join(" ") || profile.username || row.participant_name;
+      return { ...row, participant_name: displayName };
+    });
+    return json({ quiz, version_id: version.id, version_number: version.version_number, questions, submissions: visibleSubmissions }, 200, origin);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Unable to load assessment" }, 400, origin);
   }
