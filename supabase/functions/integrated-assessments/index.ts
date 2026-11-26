@@ -36,8 +36,7 @@ async function verifyLessonOwner(user: any, lessonId: string) {
   if (!post?.id || post.author_user_id !== user.id) throw new Error("Only the lesson publisher can manage its assessment");
   return post;
 }
-async function getSession(req: Request, userId: string) {
-  const body = await req.clone().json().catch(() => ({}));
+async function getSession(body: any, userId: string) {
   const token = String(body.session_token || "");
   if (token.length < 32) throw new Error("Assessment session is missing");
   const { data, error } = await admin.from("edutech_integration_sessions").select("id,edutech_user_id,lesson_id,quiz_id,quiz_version_id,expires_at,revoked_at").eq("token_hash", await sha256(token)).maybeSingle();
@@ -256,7 +255,7 @@ Deno.serve(async (req: Request) => {
     }
     if (action === "create_or_update") return json(await createOrUpdateIntegratedQuiz(user, payload), 200, origin);
     if (action === "attach_existing") return json(await attachExistingQuiz(user, payload), 200, origin);
-    const session = await getSession(req, user.id);
+    const session = await getSession(payload, user.id);
     const { data: quiz, error: quizError } = await admin.from("quizzes")
       .select("id,title,status,edutech_results_released,attempt_limit,release_mode,release_at,owner_edutech_user_id")
       .eq("id", session.quiz_id).single();
