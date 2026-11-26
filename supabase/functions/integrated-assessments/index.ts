@@ -250,13 +250,13 @@ Deno.serve(async (req: Request) => {
       if (!redeemed.ok || !identity?.user_id) return json({ error: identity?.error || "Launch ticket expired or already used" }, 401, origin);
       const lessonId = String(identity.lesson_id), quizId = String(identity.quiz_id), userId = String(identity.user_id);
       const { data: quiz, error } = await admin.from("quizzes")
-        .select("id,title,description,mode,status,time_limit_minutes,participant_fields,attempt_limit,release_mode,release_at,owner_edutech_user_id,linked_lesson_id")
+        .select("id,title,description,mode,status,time_limit_minutes,participant_fields,attempt_limit,allow_retakes,release_mode,release_at,owner_edutech_user_id,linked_lesson_id")
         .eq("id", quizId).eq("linked_lesson_id", lessonId).maybeSingle();
       if (error || !quiz || quiz.status !== "published") return json({ error: "This lesson has no available published assessment" }, 404, origin);
       const { count: attemptsUsed, error: attemptCountError } = await admin.from("submissions")
         .select("id", { count: "exact", head: true }).eq("quiz_id", quiz.id).eq("edutech_user_id", userId);
       if (attemptCountError) throw attemptCountError;
-      const canAttempt = !quiz.attempt_limit || (attemptsUsed || 0) < quiz.attempt_limit;
+      const canAttempt = (quiz.allow_retakes !== false || (attemptsUsed || 0) === 0) && (!quiz.attempt_limit || (attemptsUsed || 0) < quiz.attempt_limit);
       const version = await snapshotForQuiz(quiz);
       const sessionToken = randomToken();
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -295,7 +295,7 @@ Deno.serve(async (req: Request) => {
     if (action === "attach_existing") return json(await attachExistingQuiz(user, payload), 200, origin);
     const session = await getSession(payload, user.id);
     const { data: quiz, error: quizError } = await admin.from("quizzes")
-      .select("id,title,status,mode,edutech_results_released,attempt_limit,release_mode,release_at,owner_edutech_user_id,time_limit_minutes")
+      .select("id,title,status,mode,edutech_results_released,attempt_limit,allow_retakes,release_mode,release_at,owner_edutech_user_id,time_limit_minutes")
       .eq("id", session.quiz_id).single();
     if (quizError || !quiz) throw new Error("Assessment not found");
     const isOwner = quiz.owner_edutech_user_id === user.id;
@@ -347,6 +347,7 @@ Deno.serve(async (req: Request) => {
         .eq("quiz_id", quiz.id).eq("edutech_user_id", user.id);
       if (countError) throw countError;
       const attemptNumber = (count || 0) + 1;
+      if (quiz.allow_retakes === false && attemptNumber > 1) throw new Error("You have already submitted this assessment");
       if (quiz.attempt_limit && attemptNumber > quiz.attempt_limit) throw new Error("You have used all permitted attempts");
       const answers = payload.answers && typeof payload.answers === "object" ? payload.answers : {};
       const questions = version.snapshot?.questions || [];
