@@ -72,10 +72,24 @@ Deno.serve(async (req: Request) => {
       image_url: q.image_url || "", video_url: q.video_url || "",
     }));
     const { data: submissions, error: submissionsError } = await admin.from("submissions")
-      .select("id,participant_name,email,matric_number,extra_details,score,max_score,submitted_at,attempt_number")
+      .select("id,edutech_user_id,participant_name,email,matric_number,extra_details,score,max_score,submitted_at,attempt_number")
       .eq("quiz_id", quiz.id).order("submitted_at", { ascending: false });
     if (submissionsError) throw submissionsError;
-    return json({ quiz, version_id: version.id, version_number: version.version_number, questions, submissions: submissions || [] }, 200, origin);
+    const profileIds = [...new Set((submissions || []).map((row: any) => row.edutech_user_id).filter(Boolean))];
+    let profiles: any[] = [];
+    if (profileIds.length) {
+      const profileResponse = await fetch(`${EDUTECH_URL}/rest/v1/profiles?user_id=in.(${profileIds.join(",")})&select=user_id,username,surname,othernames`, {
+        headers: { apikey: EDUTECH_KEY, Authorization: `Bearer ${token}` },
+      });
+      if (profileResponse.ok) profiles = await profileResponse.json();
+    }
+    const profileMap = new Map(profiles.map((profile: any) => [profile.user_id, profile]));
+    const visibleSubmissions = (submissions || []).map((row: any) => {
+      const profile: any = profileMap.get(row.edutech_user_id) || {};
+      const displayName = [profile.surname, profile.othernames].filter(Boolean).join(" ") || profile.username || row.participant_name;
+      return { ...row, participant_name: displayName };
+    });
+    return json({ quiz, version_id: version.id, version_number: version.version_number, questions, submissions: visibleSubmissions }, 200, origin);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Unable to load assessment" }, 400, origin);
   }
