@@ -56,7 +56,10 @@ Deno.serve(async (req: Request) => {
     const { data: version, error: versionError } = await admin.from("quiz_versions").select("id,version_number,snapshot")
       .eq("quiz_id", quiz.id).order("version_number", { ascending: false }).limit(1).single();
     if (versionError) throw versionError;
-    const questions = (version.snapshot?.questions || []).map((q: any) => ({
+    const snapshotQuestions = version.snapshot?.questions || [];
+    const questions = snapshotQuestions.map((q: any) => ({
+      kind: q.kind || "primary",
+      parent_index: q.kind === "remedial" ? snapshotQuestions.findIndex((parent: any) => parent.id === q.parent_question_id) : null,
       prompt: q.prompt, options: q.options, correct_option: q.correct_option, points: q.points,
       image_url: q.image_url || "", video_url: q.video_url || "",
     }));
