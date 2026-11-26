@@ -70,8 +70,8 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
   if (!title || questionsInput.length < 1 || questionsInput.length > 200) throw new Error("Add a title and between 1 and 200 questions");
   for (const q of questionsInput) {
     const kind = q.kind === "remedial" ? "remedial" : "primary";
-    const expectedOptions = kind === "primary" ? 5 : 2;
-    if (!String(q.prompt || "").trim() || !Array.isArray(q.options) || q.options.length !== expectedOptions ||
+    const validOptionCount = kind === "primary" ? q.options?.length >= 2 && q.options?.length <= 5 : q.options?.length === 2;
+    if (!String(q.prompt || "").trim() || !Array.isArray(q.options) || !validOptionCount ||
         q.options.some((option: unknown) => !String(option || "").trim()) ||
         !Number.isInteger(Number(q.correct_option)) || Number(q.correct_option) < 0 || Number(q.correct_option) >= q.options.length) {
       throw new Error(kind === "primary"
