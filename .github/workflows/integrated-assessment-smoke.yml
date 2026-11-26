@@ -29,7 +29,7 @@ jobs:
         with:
           deno-version: v2.x
       - name: Type-check integrated assessment functions
-        run: deno check supabase/functions/integrated-assessments/index.ts supabase/functions/integrated-assessment-editor/index.ts
+        run: deno check --node-modules-dir=auto supabase/functions/integrated-assessments/index.ts supabase/functions/integrated-assessment-editor/index.ts
 
   smoke:
     if: github.event_name != 'pull_request'
