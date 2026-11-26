@@ -103,13 +103,14 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
     release_mode: ["automatic","manual","scheduled"].includes(payload.release_mode) ? payload.release_mode : "manual",
     release_at: payload.release_mode === "scheduled" && payload.release_at ? payload.release_at : null,
     time_limit_minutes: payload.time_limit_minutes == null ? null : Math.max(1, Math.min(600, Number(payload.time_limit_minutes))),
-    participant_fields: Array.isArray(payload.participant_fields) ? payload.participant_fields.slice(0,20).map((field: any) => ({ label: String(field.label || "").trim().slice(0,80), required: !!field.required })).filter((field: any) => field.label) : [],\n    allow_retakes: payload.allow_retakes !== false,
+    participant_fields: Array.isArray(payload.participant_fields) ? payload.participant_fields.slice(0,20).map((field: any) => ({ label: String(field.label || "").trim().slice(0,80), required: !!field.required })).filter((field: any) => field.label) : [],
+    allow_retakes: payload.allow_retakes !== false,
   };
   let quizId = existing?.id;
   if (!quizId) {
     const { data: created, error } = await admin.from("quizzes").insert({
       ...config, owner_id: null, owner_edutech_user_id: user.id, linked_lesson_id: lessonId,
-      allow_retakes: true, edutech_results_released: false,
+      edutech_results_released: false,
     }).select("id").single();
     if (error) throw error;
     quizId = created.id;
