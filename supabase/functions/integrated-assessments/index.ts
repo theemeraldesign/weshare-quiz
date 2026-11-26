@@ -296,7 +296,7 @@ Deno.serve(async (req: Request) => {
     if (action === "attach_existing") return json(await attachExistingQuiz(user, payload), 200, origin);
     const session = await getSession(payload, user.id);
     const { data: quiz, error: quizError } = await admin.from("quizzes")
-      .select("id,title,status,mode,edutech_results_released,attempt_limit,allow_retakes,release_mode,release_at,owner_edutech_user_id,time_limit_minutes")
+      .select("id,title,status,mode,edutech_results_released,attempt_limit,allow_retakes,release_mode,release_at,owner_edutech_user_id,time_limit_minutes,participant_fields")
       .eq("id", session.quiz_id).single();
     if (quizError || !quiz) throw new Error("Assessment not found");
     const isOwner = quiz.owner_edutech_user_id === user.id;
@@ -386,9 +386,13 @@ Deno.serve(async (req: Request) => {
           if (Number.isInteger(selected)) answerRows.push({ question_id: q.id, selected_option: selected, is_correct: correct, awarded_points: correct ? points : 0 });
         }
       }
+      const extraDetails = payload.extra_details && typeof payload.extra_details === "object" ? payload.extra_details : {};
+      for (const field of Array.isArray(quiz.participant_fields) ? quiz.participant_fields : []) {
+        if (field.required && !String(extraDetails[field.label] || "").trim()) throw new Error(`Complete the required field: ${field.label}`);
+      }
       const { data: submission, error: insertError } = await admin.from("submissions").insert({
         quiz_id: quiz.id, participant_name: String(payload.participant_name || "EduTech learner").slice(0, 160),
-        email: user.email, matric_number: "", extra_details: { source: "edutech", lesson_id: session.lesson_id },
+        email: user.email, matric_number: String(payload.matric_number || "").slice(0, 100), extra_details: { source: "edutech", lesson_id: session.lesson_id, ...extraDetails },
         score, max_score: maxScore, edutech_user_id: user.id, quiz_version_id: version.id, attempt_number: attemptNumber,
       }).select("id,score,max_score,submitted_at,attempt_number").single();
       if (insertError) throw insertError;
