@@ -79,6 +79,7 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
         : "Each remedial question needs a prompt, two complete options, and one correct answer");
     }
   }
+  if (!questionsInput.some((q: any) => q.kind !== "remedial")) throw new Error("Add at least one primary question");
   if (payload.mode === "exam" && questionsInput.some((q: any) => q.kind === "remedial")) {
     throw new Error("Remedial questions are only available in tutorial mode");
   }
