@@ -295,7 +295,7 @@ Deno.serve(async (req: Request) => {
     if (action === "attach_existing") return json(await attachExistingQuiz(user, payload), 200, origin);
     const session = await getSession(payload, user.id);
     const { data: quiz, error: quizError } = await admin.from("quizzes")
-      .select("id,title,status,edutech_results_released,attempt_limit,release_mode,release_at,owner_edutech_user_id,time_limit_minutes")
+      .select("id,title,status,mode,edutech_results_released,attempt_limit,release_mode,release_at,owner_edutech_user_id,time_limit_minutes")
       .eq("id", session.quiz_id).single();
     if (quizError || !quiz) throw new Error("Assessment not found");
     const isOwner = quiz.owner_edutech_user_id === user.id;
