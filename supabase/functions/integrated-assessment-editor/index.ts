@@ -56,7 +56,15 @@ Deno.serve(async (req: Request) => {
     }
     if (action === "publish") {
       const { data: latest } = await admin.from("quiz_versions").select("snapshot").eq("quiz_id", quiz.id).order("version_number", { ascending: false }).limit(1).maybeSingle();
-      if (!latest?.snapshot?.questions?.length) throw new Error("Add at least one question before publishing");
+      const questions = latest?.snapshot?.questions || [];
+      const primary = questions.filter((question: any) => question.kind !== "remedial");
+      if (!primary.length) throw new Error("Add at least one primary question before publishing");
+      if (quiz.mode === "tutorial") {
+        for (const parent of primary) {
+          const remedials = questions.filter((question: any) => question.kind === "remedial" && question.parent_question_id === parent.id);
+          if (remedials.length !== 2) throw new Error("Each tutorial primary question needs exactly two follow-up questions");
+        }
+      }
       const { error: updateError } = await admin.from("quizzes").update({ status: "published" }).eq("id", quiz.id);
       if (updateError) throw updateError;
       return json({ published: true }, 200, origin);
