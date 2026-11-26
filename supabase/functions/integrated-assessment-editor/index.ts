@@ -14,7 +14,7 @@ Deno.serve(async (req: Request) => {
     const auth = await fetch(`${EDUTECH_URL}/auth/v1/user`, { headers: { apikey: EDUTECH_KEY, Authorization: `Bearer ${token}` } });
     if (!auth.ok) return json({ error: "Your EduTech session is invalid or expired" }, 401, origin);
     const user = await auth.json();
-    const { lesson_id, action = "get", value } = await req.json();
+    const { lesson_id, action = "get", value, participant_fields: requestedParticipantFields } = await req.json();
     const postResponse = await fetch(`${EDUTECH_URL}/rest/v1/posts?id=eq.${encodeURIComponent(String(lesson_id))}&select=id,author_user_id,linked_quiz_id`, {
       headers: { apikey: EDUTECH_KEY, Authorization: `Bearer ${token}`, Accept: "application/vnd.pgrst.object+json" },
     });
@@ -37,8 +37,8 @@ Deno.serve(async (req: Request) => {
       return json({ deleted: true }, 200, origin);
     }
     if (action === "fields") {
-      const participant_fields = Array.isArray(payload.participant_fields)
-        ? payload.participant_fields.slice(0, 20).map((field: any) => ({ label: String(field.label || "").trim().slice(0, 80), required: !!field.required })).filter((field: any) => field.label)
+      const participant_fields = Array.isArray(requestedParticipantFields)
+        ? requestedParticipantFields.slice(0, 20).map((field: any) => ({ label: String(field.label || "").trim().slice(0, 80), required: !!field.required })).filter((field: any) => field.label)
         : [];
       const { error: updateError } = await admin.from("quizzes").update({ participant_fields }).eq("id", quiz.id);
       if (updateError) throw updateError;
