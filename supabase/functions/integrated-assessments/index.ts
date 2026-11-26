@@ -92,7 +92,7 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
   if (!quizId) {
     const { data: created, error } = await admin.from("quizzes").insert({
       ...config, owner_id: null, owner_edutech_user_id: user.id, linked_lesson_id: lessonId,
-      allow_retakes: true, results_released: false,
+      allow_retakes: true, edutech_results_released: false,
     }).select("id").single();
     if (error) throw error;
     quizId = created.id;
@@ -178,7 +178,7 @@ Deno.serve(async (req: Request) => {
       if (quizListError || submissionError) throw quizListError || submissionError;
       const items = (quizzes || []).map((quiz: any) => {
         const attempts = (submissions || []).filter((row: any) => row.quiz_id === quiz.id);
-        const released = quiz.results_released || (quiz.release_mode === "scheduled" && quiz.release_at && new Date(quiz.release_at).getTime() <= Date.now());
+        const released = quiz.edutech_results_released || (quiz.release_mode === "scheduled" && quiz.release_at && new Date(quiz.release_at).getTime() <= Date.now());
         const best = attempts.reduce((best: any, row: any) => !best || Number(row.score) / Math.max(1, Number(row.max_score)) > Number(best.score) / Math.max(1, Number(best.max_score)) ? row : best, null);
         return { quiz_id: quiz.id, lesson_id: quiz.linked_lesson_id, title: quiz.title, attempt_count: attempts.length,
           attempt_limit: quiz.attempt_limit, released, best_attempt: released ? best : null };
@@ -188,7 +188,7 @@ Deno.serve(async (req: Request) => {
     if (action === "create_or_update") return json(await createOrUpdateIntegratedQuiz(user, payload), 200, origin);
     const session = await getSession(req, user.id);
     const { data: quiz, error: quizError } = await admin.from("quizzes")
-      .select("id,title,status,results_released,attempt_limit,release_mode,release_at,owner_edutech_user_id")
+      .select("id,title,status,edutech_results_released,attempt_limit,release_mode,release_at,owner_edutech_user_id")
       .eq("id", session.quiz_id).single();
     if (quizError || !quiz) throw new Error("Assessment not found");
     const isOwner = quiz.owner_edutech_user_id === user.id;
@@ -226,7 +226,7 @@ Deno.serve(async (req: Request) => {
         if (answerError) throw answerError;
       }
       if (quiz.release_mode === "automatic" || (quiz.release_mode === "scheduled" && quiz.release_at && new Date(quiz.release_at).getTime() <= Date.now())) {
-        await admin.from("quizzes").update({ results_released: true }).eq("id", quiz.id);
+        await admin.from("quizzes").update({ edutech_results_released: true }).eq("id", quiz.id);
       }
       return json({ submission, attempts_used: attemptNumber, attempt_limit: quiz.attempt_limit }, 200, origin);
     }
