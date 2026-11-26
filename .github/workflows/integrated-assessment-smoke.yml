@@ -1,0 +1,62 @@
+name: Integrated assessment endpoint smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/integrated-assessments/**"
+      - "supabase/functions/integrated-assessment-editor/**"
+      - ".github/workflows/integrated-assessment-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check deployed Quiz and EduTech endpoints
+        env:
+          QUIZ_URL: https://oqtoaspsaxvvbnhwesiq.supabase.co
+          QUIZ_KEY: sb_publishable_vibq_x9_ozsZvtFmUp957g_Yqt2vKsy
+          EDUTECH_URL: https://fpbsvxplmjifcpvczfot.supabase.co
+          EDUTECH_KEY: sb_publishable_7XKS46xxlEn5GWoX0dsgxg_pNBE6b1B
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+
+          status=$(curl --silent --show-error --max-time 20 --output "$work/bootstrap.json" --write-out '%{http_code}' \
+            --request POST "$QUIZ_URL/functions/v1/integrated-assessments" \
+            --header "apikey: $QUIZ_KEY" --header "Content-Type: application/json" \
+            --data '{"action":"bootstrap","launch_ticket":"invalid"}')
+          test "$status" = "400"
+          grep -q 'Invalid launch ticket' "$work/bootstrap.json"
+          echo "Quiz launch endpoint is reachable and rejects invalid tickets."
+
+          status=$(curl --silent --show-error --max-time 20 --output "$work/editor.json" --write-out '%{http_code}' \
+            --request POST "$QUIZ_URL/functions/v1/integrated-assessment-editor" \
+            --header "apikey: $QUIZ_KEY" --header "Content-Type: application/json" \
+            --data '{"lesson_id":"00000000-0000-0000-0000-000000000000"}')
+          test "$status" = "401"
+          grep -q 'Sign in to manage this assessment' "$work/editor.json"
+          echo "Publisher editor endpoint enforces EduTech authentication."
+
+          status=$(curl --silent --show-error --max-time 20 --output "$work/redeem.json" --write-out '%{http_code}' \
+            --request POST "$EDUTECH_URL/functions/v1/redeem-quiz-ticket" \
+            --header "apikey: $EDUTECH_KEY" --header "Content-Type: application/json" \
+            --data '{"ticket":"invalid"}')
+          test "$status" = "400"
+          grep -q 'Invalid launch ticket' "$work/redeem.json"
+          echo "EduTech ticket redemption endpoint is reachable and rejects invalid tickets."
+
+          status=$(curl --silent --show-error --max-time 20 --output "$work/private-bank.json" --write-out '%{http_code}' \
+            "$EDUTECH_URL/rest/v1/lesson_gate_question_banks?select=post_id&limit=1" \
+            --header "apikey: $EDUTECH_KEY" --header "Authorization: Bearer $EDUTECH_KEY")
+          case "$status" in
+            401|403) echo "Private checkpoint answer banks reject public database access." ;;
+            *) echo "Unexpected public access status for private checkpoint banks: $status"; exit 1 ;;
+          esac
