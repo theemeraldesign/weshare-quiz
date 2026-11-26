@@ -26,14 +26,14 @@ Deno.serve(async (req: Request) => {
       .eq("id", post.linked_quiz_id).eq("owner_edutech_user_id", user.id).single();
     if (error || !quiz) throw new Error("Linked assessment not found");
     if (action === "delete") {
-      const { error: deleteError } = await admin.from("quizzes").delete().eq("id", quiz.id).eq("owner_edutech_user_id", user.id);
-      if (deleteError) throw deleteError;
       const unlink = await fetch(`${EDUTECH_URL}/rest/v1/posts?id=eq.${encodeURIComponent(String(lesson_id))}`, {
         method: "PATCH",
         headers: { apikey: EDUTECH_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=minimal" },
         body: JSON.stringify({ linked_quiz_id: null }),
       });
-      if (!unlink.ok) throw new Error("Assessment deleted, but the lesson link could not be cleared");
+      if (!unlink.ok) throw new Error("The lesson link could not be cleared. The assessment was not deleted.");
+      const { error: deleteError } = await admin.from("quizzes").delete().eq("id", quiz.id).eq("owner_edutech_user_id", user.id);
+      if (deleteError) throw deleteError;
       return json({ deleted: true }, 200, origin);
     }
     if (action === "retakes") {
