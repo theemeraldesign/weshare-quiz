@@ -252,6 +252,7 @@ Deno.serve(async (req: Request) => {
       const people = new Map<string, any>();
       for (const row of sessions || []) if (row.edutech_user_id !== quiz.owner_edutech_user_id) people.set(row.edutech_user_id, { edutech_user_id: row.edutech_user_id, started_at: row.created_at, submissions: 0, best_score: null, max_score: null, last_submitted_at: null });
       for (const row of rows || []) {
+        if (row.edutech_user_id === quiz.owner_edutech_user_id) continue;
         const person = people.get(row.edutech_user_id) || { edutech_user_id: row.edutech_user_id, started_at: null, submissions: 0, best_score: null, max_score: null, last_submitted_at: null };
         person.submissions += 1;
         person.last_submitted_at ||= row.submitted_at;
