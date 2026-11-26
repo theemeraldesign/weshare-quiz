@@ -304,6 +304,12 @@ Deno.serve(async (req: Request) => {
 
     if (action === "tutorial_answer") {
       if (quiz.mode !== "tutorial" || quiz.status !== "published") throw new Error("Tutorial answers are not available");
+      const { count: submittedCount, error: submittedCountError } = await admin.from("submissions").select("id", { count: "exact", head: true })
+        .eq("quiz_id", quiz.id).eq("edutech_user_id", user.id);
+      if (submittedCountError) throw submittedCountError;
+      if (session.attempt_number !== (submittedCount || 0) + 1) throw new Error("This attempt has already been submitted. Reopen the lesson to start your next attempt.");
+      if (quiz.allow_retakes === false && session.attempt_number > 1) throw new Error("You have already submitted this assessment");
+      if (quiz.attempt_limit && session.attempt_number > quiz.attempt_limit) throw new Error("You have used all permitted attempts");
       const { data: version, error: versionError } = await admin.from("quiz_versions")
         .select("snapshot").eq("id", session.quiz_version_id).eq("quiz_id", quiz.id).single();
       if (versionError || !version) throw new Error("Tutorial version not found");
@@ -349,6 +355,7 @@ Deno.serve(async (req: Request) => {
         .eq("quiz_id", quiz.id).eq("edutech_user_id", user.id);
       if (countError) throw countError;
       const attemptNumber = (count || 0) + 1;
+      if (session.attempt_number !== attemptNumber) throw new Error("This attempt has already been submitted. Reopen the lesson to continue.");
       if (quiz.allow_retakes === false && attemptNumber > 1) throw new Error("You have already submitted this assessment");
       if (quiz.attempt_limit && attemptNumber > quiz.attempt_limit) throw new Error("You have used all permitted attempts");
       const answers = payload.answers && typeof payload.answers === "object" ? payload.answers : {};
