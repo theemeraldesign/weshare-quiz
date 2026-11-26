@@ -70,12 +70,12 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
   if (!title || questionsInput.length < 1 || questionsInput.length > 200) throw new Error("Add a title and between 1 and 200 questions");
   for (const q of questionsInput) {
     const kind = q.kind === "remedial" ? "remedial" : "primary";
-    const validOptionCount = kind === "primary" ? q.options?.length >= 2 && q.options?.length <= 5 : q.options?.length === 2;
+    const validOptionCount = kind === "primary" ? q.options?.length === 5 : q.options?.length === 2;
     if (!String(q.prompt || "").trim() || !Array.isArray(q.options) || !validOptionCount ||
         q.options.some((option: unknown) => !String(option || "").trim()) ||
         !Number.isInteger(Number(q.correct_option)) || Number(q.correct_option) < 0 || Number(q.correct_option) >= q.options.length) {
       throw new Error(kind === "primary"
-        ? "Each primary question needs a prompt, two to five complete options, and one correct answer"
+        ? "Each primary question needs a prompt, five complete options, and one correct answer"
         : "Each remedial question needs a prompt, two complete options, and one correct answer");
     }
   }
@@ -380,7 +380,7 @@ Deno.serve(async (req: Request) => {
           const selected = Number(lockMap.get(q.id));
           const correct = selected === Number(q.correct_option);
           const points = Number(q.points || 0);
-          maxScore += points;
+          if (q.kind === "primary") maxScore += 2;
           if (correct) score += points;
           answerRows.push({ question_id: q.id, selected_option: selected, is_correct: correct, awarded_points: correct ? points : 0 });
         }
