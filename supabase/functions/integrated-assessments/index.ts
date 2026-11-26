@@ -256,7 +256,8 @@ Deno.serve(async (req: Request) => {
       const { count: attemptsUsed, error: attemptCountError } = await admin.from("submissions")
         .select("id", { count: "exact", head: true }).eq("quiz_id", quiz.id).eq("edutech_user_id", userId);
       if (attemptCountError) throw attemptCountError;
-      const attemptNumber = (attemptsUsed || 0) + 1;\n      const canAttempt = (quiz.allow_retakes !== false || attemptNumber === 1) && (!quiz.attempt_limit || attemptNumber <= quiz.attempt_limit);
+      const attemptNumber = (attemptsUsed || 0) + 1;
+      const canAttempt = (quiz.allow_retakes !== false || attemptNumber === 1) && (!quiz.attempt_limit || attemptNumber <= quiz.attempt_limit);
       const version = await snapshotForQuiz(quiz);
       const sessionToken = randomToken();
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
