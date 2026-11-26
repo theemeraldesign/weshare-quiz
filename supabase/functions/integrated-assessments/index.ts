@@ -39,7 +39,7 @@ async function verifyLessonOwner(user: any, lessonId: string) {
 async function getSession(body: any, userId: string) {
   const token = String(body.session_token || "");
   if (token.length < 32) throw new Error("Assessment session is missing");
-  const { data, error } = await admin.from("edutech_integration_sessions").select("id,edutech_user_id,lesson_id,quiz_id,quiz_version_id,expires_at,revoked_at").eq("token_hash", await sha256(token)).maybeSingle();
+  const { data, error } = await admin.from("edutech_integration_sessions").select("id,edutech_user_id,lesson_id,quiz_id,quiz_version_id,expires_at,revoked_at,created_at").eq("token_hash", await sha256(token)).maybeSingle();
   if (error || !data || data.edutech_user_id !== userId || data.revoked_at || new Date(data.expires_at).getTime() <= Date.now()) {
     throw new Error("Assessment session expired. Reopen the lesson to continue.");
   }
@@ -257,13 +257,17 @@ Deno.serve(async (req: Request) => {
     if (action === "attach_existing") return json(await attachExistingQuiz(user, payload), 200, origin);
     const session = await getSession(payload, user.id);
     const { data: quiz, error: quizError } = await admin.from("quizzes")
-      .select("id,title,status,edutech_results_released,attempt_limit,release_mode,release_at,owner_edutech_user_id")
+      .select("id,title,status,edutech_results_released,attempt_limit,release_mode,release_at,owner_edutech_user_id,time_limit_minutes")
       .eq("id", session.quiz_id).single();
     if (quizError || !quiz) throw new Error("Assessment not found");
     const isOwner = quiz.owner_edutech_user_id === user.id;
 
     if (action === "submit") {
       if (quiz.status !== "published") throw new Error("This assessment is closed");
+      if (quiz.time_limit_minutes && session.created_at) {
+        const deadline = new Date(session.created_at).getTime() + Number(quiz.time_limit_minutes) * 60_000;
+        if (Date.now() > deadline + 15_000) throw new Error("The assessment time limit has expired");
+      }
       const { data: version, error: versionError } = await admin.from("quiz_versions")
         .select("id,snapshot").eq("id", session.quiz_version_id).eq("quiz_id", quiz.id).single();
       if (versionError || !version) throw new Error("Assessment version not found");
@@ -300,7 +304,7 @@ Deno.serve(async (req: Request) => {
       return json({ submission, attempts_used: attemptNumber, attempt_limit: quiz.attempt_limit }, 200, origin);
     }
     if (action === "results") {
-      const released = quiz.results_released || (quiz.release_mode === "scheduled" && quiz.release_at && new Date(quiz.release_at).getTime() <= Date.now());
+      const released = quiz.edutech_results_released || (quiz.release_mode === "scheduled" && quiz.release_at && new Date(quiz.release_at).getTime() <= Date.now());
       if (!released && !isOwner) return json({ released: false, attempts: [] }, 200, origin);
       const { data: attempts, error } = await admin.from("submissions")
         .select("id,score,max_score,submitted_at,attempt_number,quiz_version_id")
@@ -348,7 +352,7 @@ Deno.serve(async (req: Request) => {
     }
     if (action === "release") {
       if (!isOwner) return json({ error: "Publisher access required" }, 403, origin);
-      const { error } = await admin.from("quizzes").update({ results_released: true }).eq("id", quiz.id);
+      const { error } = await admin.from("quizzes").update({ edutech_results_released: true }).eq("id", quiz.id);
       if (error) throw error;
       return json({ released: true }, 200, origin);
     }
