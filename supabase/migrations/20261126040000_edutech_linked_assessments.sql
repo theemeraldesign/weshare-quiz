@@ -65,3 +65,5 @@ revoke all on public.quiz_versions from anon, authenticated;
 revoke all on public.edutech_integration_sessions from anon, authenticated;
 grant all on public.quiz_versions to service_role;
 grant all on public.edutech_integration_sessions to service_role;
+
+alter table public.quizzes add column if not exists edutech_results_released boolean not null default false;
