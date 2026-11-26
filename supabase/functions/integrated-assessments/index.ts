@@ -386,12 +386,14 @@ Deno.serve(async (req: Request) => {
           if (Number.isInteger(selected)) answerRows.push({ question_id: q.id, selected_option: selected, is_correct: correct, awarded_points: correct ? points : 0 });
         }
       }
+      const participantName = String(payload.participant_name || "").trim();
+      if (!participantName) throw new Error("Enter your name before submitting");
       const extraDetails = payload.extra_details && typeof payload.extra_details === "object" ? payload.extra_details : {};
       for (const field of Array.isArray(quiz.participant_fields) ? quiz.participant_fields : []) {
         if (field.required && !String(extraDetails[field.label] || "").trim()) throw new Error(`Complete the required field: ${field.label}`);
       }
       const { data: submission, error: insertError } = await admin.from("submissions").insert({
-        quiz_id: quiz.id, participant_name: String(payload.participant_name || "EduTech learner").slice(0, 160),
+        quiz_id: quiz.id, participant_name: participantName.slice(0, 160),
         email: user.email, matric_number: String(payload.matric_number || "").slice(0, 100), extra_details: { source: "edutech", lesson_id: session.lesson_id, ...extraDetails },
         score, max_score: maxScore, edutech_user_id: user.id, quiz_version_id: version.id, attempt_number: attemptNumber,
       }).select("id,score,max_score,submitted_at,attempt_number").single();
