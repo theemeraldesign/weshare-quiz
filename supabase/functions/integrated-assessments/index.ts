@@ -131,7 +131,7 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
     kind: q.kind === "remedial" ? "remedial" : "primary", parent_question_id: null,
     prompt: String(q.prompt).trim().slice(0, 3000),
     options: q.options.map((o: unknown) => String(o).slice(0, 500)),
-    correct_option: Number(q.correct_option), points: q.kind === "remedial" ? 0.5 : Math.max(0, Math.min(100, Number(q.points ?? 2))),
+    correct_option: Number(q.correct_option), points: q.kind === "remedial" ? 0.5 : 2,
     image_url: q.image_url ? String(q.image_url).slice(0, 2000) : null,
     video_url: q.video_url ? String(q.video_url).slice(0, 2000) : null,
   }));
@@ -329,7 +329,7 @@ Deno.serve(async (req: Request) => {
         const followups = question.kind === "primary" && !existing.is_correct
           ? (version.snapshot?.questions || []).filter((item: any) => item.kind === "remedial" && item.parent_question_id === questionId).map(({ correct_option, ...item }: any) => item)
           : [];
-        return json({ selected_option: existing.selected_option, unlocks_remedial: question.kind === "primary" && !existing.is_correct, followups }, 200, origin);
+        return json({ selected_option: existing.selected_option, is_correct: existing.is_correct, unlocks_remedial: question.kind === "primary" && !existing.is_correct, followups }, 200, origin);
       }
       const correct = selected === Number(question.correct_option);
       const { error: lockError } = await admin.from("edutech_tutorial_answer_locks").insert({
@@ -337,10 +337,10 @@ Deno.serve(async (req: Request) => {
       });
       if (lockError) throw lockError;
       const followups = question.kind === "primary" && !correct
-        ? (version.snapshot?.questions || []).filter((item: any) => item.kind === "remedial" && item.parent_question_id === questionId)
+        ? (version.snapshot?.questions || []).filter((item: any) => item.kind === "remedial" && item.parent_question_id === questionId).map(({ correct_option, ...item }: any) => item)
         : [];
       if (question.kind === "primary" && !correct && followups.length !== 2) throw new Error("This tutorial question is missing its two follow-up questions");
-      return json({ selected_option: selected, unlocks_remedial: question.kind === "primary" && !correct, followups }, 200, origin);
+      return json({ selected_option: selected, is_correct: correct, unlocks_remedial: question.kind === "primary" && !correct, followups }, 200, origin);
     }
     if (action === "submit") {
       if (quiz.status !== "published") throw new Error("This assessment is closed");
