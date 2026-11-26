@@ -39,7 +39,7 @@ async function verifyLessonOwner(user: any, lessonId: string) {
 async function getSession(body: any, userId: string) {
   const token = String(body.session_token || "");
   if (token.length < 32) throw new Error("Assessment session is missing");
-  const { data, error } = await admin.from("edutech_integration_sessions").select("id,edutech_user_id,lesson_id,quiz_id,quiz_version_id,expires_at,revoked_at,created_at").eq("token_hash", await sha256(token)).maybeSingle();
+  const { data, error } = await admin.from("edutech_integration_sessions").select("id,edutech_user_id,lesson_id,quiz_id,quiz_version_id,attempt_number,expires_at,revoked_at,created_at").eq("token_hash", await sha256(token)).maybeSingle();
   if (error || !data || data.edutech_user_id !== userId || data.revoked_at || new Date(data.expires_at).getTime() <= Date.now()) {
     throw new Error("Assessment session expired. Reopen the lesson to continue.");
   }
