@@ -36,6 +36,14 @@ Deno.serve(async (req: Request) => {
       if (deleteError) throw deleteError;
       return json({ deleted: true }, 200, origin);
     }
+    if (action === "fields") {
+      const participant_fields = Array.isArray(payload.participant_fields)
+        ? payload.participant_fields.slice(0, 20).map((field: any) => ({ label: String(field.label || "").trim().slice(0, 80), required: !!field.required })).filter((field: any) => field.label)
+        : [];
+      const { error: updateError } = await admin.from("quizzes").update({ participant_fields }).eq("id", quiz.id);
+      if (updateError) throw updateError;
+      return json({ participant_fields }, 200, origin);
+    }
     if (action === "retakes") {
       const { error: updateError } = await admin.from("quizzes").update({ allow_retakes: value === true }).eq("id", quiz.id);
       if (updateError) throw updateError;
