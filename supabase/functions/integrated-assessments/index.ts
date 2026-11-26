@@ -372,6 +372,7 @@ Deno.serve(async (req: Request) => {
     }
     if (action === "release") {
       if (!isOwner) return json({ error: "Publisher access required" }, 403, origin);
+      if (quiz.release_mode !== "manual") return json({ error: "This assessment does not use manual result release" }, 400, origin);
       const { error } = await admin.from("quizzes").update({ edutech_results_released: true }).eq("id", quiz.id);
       if (error) throw error;
       return json({ released: true }, 200, origin);
