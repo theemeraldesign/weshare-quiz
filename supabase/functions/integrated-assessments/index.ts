@@ -195,7 +195,7 @@ async function attachExistingQuiz(user: any, payload: any) {
     body: JSON.stringify({ linked_quiz_id: clone.id }),
   });
   if (!patch.ok) throw new Error("Quiz copy created, but the lesson link could not be saved");
-  return { quiz_id: clone.id, question_count: copied?.length || 0, attached_copy: true };
+  return { quiz_id: clone.id, title: source.title, description: source.description, time_limit_minutes: source.time_limit_minutes, question_count: copied?.length || 0, questions: (copied || []).map((q: any) => ({ prompt: q.prompt, options: q.options, correct_option: q.correct_option, points: q.points, image_url: q.image_url || "", video_url: q.video_url || "" })), attached_copy: true };
 }
 
 Deno.serve(async (req: Request) => {
