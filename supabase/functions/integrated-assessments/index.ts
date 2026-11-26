@@ -148,7 +148,7 @@ Deno.serve(async (req: Request) => {
       if (!redeemed.ok || !identity?.user_id) return json({ error: identity?.error || "Launch ticket expired or already used" }, 401, origin);
       const lessonId = String(identity.lesson_id), quizId = String(identity.quiz_id), userId = String(identity.user_id);
       const { data: quiz, error } = await admin.from("quizzes")
-        .select("id,title,description,mode,status,results_released,time_limit_minutes,participant_fields,attempt_limit,release_mode,release_at,owner_edutech_user_id,linked_lesson_id")
+        .select("id,title,description,mode,status,time_limit_minutes,participant_fields,attempt_limit,release_mode,release_at,owner_edutech_user_id,linked_lesson_id")
         .eq("id", quizId).eq("linked_lesson_id", lessonId).maybeSingle();
       if (error || !quiz || quiz.status !== "published") return json({ error: "This lesson has no available published assessment" }, 404, origin);
       const version = await snapshotForQuiz(quiz);
@@ -170,7 +170,7 @@ Deno.serve(async (req: Request) => {
     const user = await authenticateEduTech(req);
     if (action === "dashboard") {
       const [{ data: quizzes, error: quizListError }, { data: submissions, error: submissionError }] = await Promise.all([
-        admin.from("quizzes").select("id,title,linked_lesson_id,results_released,release_mode,release_at,attempt_limit,status")
+        admin.from("quizzes").select("id,title,linked_lesson_id,edutech_results_released,release_mode,release_at,attempt_limit,status")
           .not("linked_lesson_id", "is", null).in("status", ["published","closed"]),
         admin.from("submissions").select("quiz_id,id,score,max_score,submitted_at,attempt_number")
           .eq("edutech_user_id", user.id).order("attempt_number", { ascending: true }),
