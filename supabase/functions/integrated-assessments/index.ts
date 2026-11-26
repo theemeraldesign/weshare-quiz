@@ -136,9 +136,10 @@ async function createOrUpdateIntegratedQuiz(user: any, payload: any) {
   const { data: inserted, error: questionsError } = await admin.from("questions").insert(rows)
     .select("id,parent_question_id,position,kind,prompt,options,correct_option,points,image_url,video_url");
   if (questionsError) throw questionsError;
+  const orderedInserted = [...(inserted || [])].sort((a: any, b: any) => Number(a.position) - Number(b.position));
   const primaryIds = new Map<number, string>();
-  (inserted || []).forEach((q: any, i: number) => { if (q.kind === "primary") primaryIds.set(i, q.id); });
-  const versionQuestions = (inserted || []).map((q: any, i: number) => {
+  orderedInserted.forEach((q: any, i: number) => { if (q.kind === "primary") primaryIds.set(i, q.id); });
+  const versionQuestions = orderedInserted.map((q: any, i: number) => {
     const source = questionsInput[i];
     const parentId = q.kind === "remedial" ? primaryIds.get(Number(source.parent_index)) || null : null;
     return { ...q, parent_question_id: parentId };
