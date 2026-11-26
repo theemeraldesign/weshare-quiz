@@ -219,6 +219,12 @@ Deno.serve(async (req: Request) => {
         .select("id,title,description,mode,status,time_limit_minutes,participant_fields,attempt_limit,release_mode,release_at,owner_edutech_user_id,linked_lesson_id")
         .eq("id", quizId).eq("linked_lesson_id", lessonId).maybeSingle();
       if (error || !quiz || quiz.status !== "published") return json({ error: "This lesson has no available published assessment" }, 404, origin);
+      if (quiz.attempt_limit) {
+        const { count, error: attemptCountError } = await admin.from("submissions")
+          .select("id", { count: "exact", head: true }).eq("quiz_id", quiz.id).eq("edutech_user_id", userId);
+        if (attemptCountError) throw attemptCountError;
+        if ((count || 0) >= quiz.attempt_limit) return json({ error: "You have used all permitted attempts for this assessment" }, 403, origin);
+      }
       const version = await snapshotForQuiz(quiz);
       const sessionToken = randomToken();
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
